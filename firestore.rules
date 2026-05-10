@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================================
+    // REGLAS DE SEGURIDAD — Requieren autenticación con restricciones de rol
+    // =====================================================================
+
+    // Emergencias — lectura para usuarios autenticados, creación con vecinoId propio
+    match /emergencias/{emergenciaId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.vecinoId == request.auth.uid;
+      // S5 FIX: Solo el patrullero asignado o el sistema pueden actualizar
+      allow update: if request.auth != null
+                    && (
+                      // El patrullero asignado puede actualizar estado
+                      resource.data.patrullaAsignadaId == request.auth.uid
+                      // O el vecino que creó la emergencia puede actualizar su ubicación actual
+                      || resource.data.vecinoId == request.auth.uid
+                      // P1: Operador C3 puede gestionar cualquier emergencia
+                      || exists(/databases/$(database)/documents/operadores_c3/$(request.auth.uid))
+                    );
+      allow delete: if false;
+    }
+
+    // S4 FIX: Patrulleros — solo el propio patrullero puede escribir su documento
+    match /patrulleros/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid;
+    }
+
+    // Usuarios — lectura autenticada, creación libre (registro), update solo propietario
+    match /usuarios/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null
+                    && (resource.data.uid == request.auth.uid
+                        || resource.data.dni == docId);
+      allow delete: if false;
+    }
+
+    // Operadores C3 — solo lectura para verificación de rol
+    match /operadores_c3/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Auditoría — solo lectura, Cloud Functions escriben con Admin SDK
+    match /auditoria/{logId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

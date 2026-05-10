@@ -1,0 +1,124 @@
+/* ================================================================
+   Web-C3 Design System — Tokens & Utilities
+   ================================================================ */
+
+/* --- CSS Custom Properties (Design Tokens) --- */
+:root {
+  /* Primary Palette — unified across ecosystem */
+  --c3-primary: #0B2046;
+  --c3-primary-light: #1a3a6a;
+  --c3-primary-hover: #0d2854;
+  --c3-accent: #64B5F6;
+
+  /* Status Colors */
+  --c3-danger: #E02828;
+  --c3-danger-dark: #8B0000;
+  --c3-danger-bg: #FFEBEE;
+  --c3-danger-text: #C62828;
+  --c3-warning: #F6C23E;
+  --c3-warning-dark: #F57C00;
+  --c3-success: #43A047;
+  --c3-info: #1E88E5;
+
+  /* Neutrals */
+  --c3-bg: #f0f2f5;
+  --c3-surface: #ffffff;
+  --c3-border: #e0e0e0;
+  --c3-text: #333333;
+  --c3-text-secondary: #666666;
+  --c3-text-muted: #888888;
+  --c3-text-disabled: #aaaaaa;
+
+  /* Typography */
+  --c3-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --c3-font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  /* Spacing */
+  --c3-space-xs: 4px;
+  --c3-space-sm: 8px;
+  --c3-space-md: 16px;
+  --c3-space-lg: 24px;
+  --c3-space-xl: 32px;
+  --c3-space-2xl: 48px;
+
+  /* Radii */
+  --c3-radius-sm: 4px;
+  --c3-radius-md: 6px;
+  --c3-radius-lg: 8px;
+  --c3-radius-xl: 12px;
+  --c3-radius-pill: 20px;
+
+  /* Shadows */
+  --c3-shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --c3-shadow-md: 0 2px 8px rgba(0,0,0,0.1);
+  --c3-shadow-lg: 0 8px 32px rgba(0,0,0,0.15);
+
+  /* Sidebar */
+  --c3-sidebar-width: 250px;
+  --c3-sidebar-collapsed: 64px;
+
+  /* Transitions */
+  --c3-transition: 0.2s ease;
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--c3-font);
+  background-color: var(--c3-bg);
+  color: var(--c3-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Focus visible for keyboard accessibility (A6) --- */
+:focus-visible {
+  outline: 3px solid var(--c3-accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--c3-accent);
+  outline-offset: 2px;
+}
+
+/* --- Skip Link (A6) --- */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--c3-space-md);
+  z-index: 9999;
+  padding: var(--c3-space-sm) var(--c3-space-md);
+  background: var(--c3-primary);
+  color: white;
+  border-radius: var(--c3-radius-md);
+  font-weight: bold;
+  text-decoration: none;
+  transition: top var(--c3-transition);
+}
+.skip-link:focus {
+  top: var(--c3-space-md);
+}
+
+/* --- Visually hidden (screen reader only) --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
