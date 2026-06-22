@@ -3,8 +3,10 @@ import { collection, query, where, orderBy, limit, getDocs } from 'firebase/fire
 import { db } from '../services/firebase';
 import type { Emergencia } from '../types/Emergencia';
 import { usePatrulleros } from '../hooks/usePatrulleros';
+import { useAuth } from '../context/AuthContext';
 
 export const HistorialPage = () => {
+  const { rol } = useAuth();
   const [emergencias, setEmergencias] = useState<Emergencia[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -20,7 +22,7 @@ export const HistorialPage = () => {
     return new Date().toISOString().split('T')[0];
   });
 
-  const { patrulleros } = usePatrulleros();
+  const { patrulleros } = usePatrulleros(rol);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -32,16 +34,28 @@ export const HistorialPage = () => {
       const startMs = new Date(fechaInicio + 'T00:00:00').getTime();
       const endMs = new Date(fechaFin + 'T23:59:59').getTime();
 
-      const q = query(
-        collection(db, 'emergencias'),
-        where('timestampMs', '>=', startMs),
-        where('timestampMs', '<=', endMs),
-        orderBy('timestampMs', 'desc'),
-        limit(200) // O5: Paginación/Límite de historial
-      );
+      let q;
+      if (rol === 'ADMIN') {
+        q = query(
+          collection(db, 'emergencias'),
+          where('timestampMs', '>=', startMs),
+          where('timestampMs', '<=', endMs),
+          orderBy('timestampMs', 'desc'),
+          limit(200)
+        );
+      } else {
+        q = query(
+          collection(db, 'emergencias'),
+          where('tipo', '==', rol),
+          where('timestampMs', '>=', startMs),
+          where('timestampMs', '<=', endMs),
+          orderBy('timestampMs', 'desc'),
+          limit(200)
+        );
+      }
 
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Emergencia));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Emergencia));
       setEmergencias(data);
     } catch (error) {
       console.error('Error fetching historial:', error);

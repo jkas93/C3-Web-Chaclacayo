@@ -2,9 +2,116 @@ import { useMemo, memo, useState, useCallback, useRef, useEffect } from 'react';
 import { useJsApiLoader, GoogleMap, MarkerF, DirectionsService, DirectionsRenderer } from '@react-google-maps/api';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
+import { useAuth } from '../context/AuthContext';
 import { EstadoEmergencia, EstadoPatrullero } from '../types/enums';
 import { AlertaCoaccion } from './AlertaCoaccion';
 import type { Emergencia } from '../types/Emergencia';
+import type { Patrullero } from '../types/Patrullero';
+
+// ── SVG helpers para íconos del mapa ───────────────────────────────────────
+
+/** Ícono de emergencia diferenciado por tipo de servicio */
+function getEmergenciaIcon(tipo: string, isSelected: boolean, isCoac: boolean) {
+  const size = isSelected ? 60 : 48;
+  let svgContent: string;
+
+  if (isCoac) {
+    // Coacción: morado con ⚠
+    svgContent = `
+      <circle cx="28" cy="28" r="27" fill="#6A0DAD" opacity="0.3"/>
+      <circle cx="28" cy="28" r="21" fill="#6A0DAD"/>
+      <circle cx="28" cy="28" r="21" fill="none" stroke="white" stroke-width="2"/>
+      <text x="28" y="34" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial,sans-serif">⚠</text>
+    `;
+  } else if (tipo === 'BOMBEROS') {
+    // Bomberos: naranja con llama
+    svgContent = `
+      <circle cx="28" cy="28" r="27" fill="#E65100" opacity="0.25"/>
+      <circle cx="28" cy="28" r="21" fill="#FF5722"/>
+      <circle cx="28" cy="28" r="21" fill="none" stroke="white" stroke-width="2"/>
+      <text x="28" y="34" text-anchor="middle" fill="white" font-size="18" font-family="Arial,sans-serif">🔥</text>
+    `;
+  } else if (tipo === 'SALUD') {
+    // Salud: blanco con cruz roja
+    svgContent = `
+      <circle cx="28" cy="28" r="27" fill="#C62828" opacity="0.15"/>
+      <circle cx="28" cy="28" r="21" fill="white"/>
+      <circle cx="28" cy="28" r="21" fill="none" stroke="#C62828" stroke-width="2.5"/>
+      <rect x="22" y="15" width="12" height="26" rx="3" fill="#C62828"/>
+      <rect x="15" y="22" width="26" height="12" rx="3" fill="#C62828"/>
+    `;
+  } else {
+    // Policía (default): azul con SOS
+    svgContent = `
+      <circle cx="28" cy="28" r="27" fill="#1565C0" opacity="0.25"/>
+      <circle cx="28" cy="28" r="21" fill="#1565C0"/>
+      <circle cx="28" cy="28" r="21" fill="none" stroke="white" stroke-width="2"/>
+      <text x="28" y="34" text-anchor="middle" fill="white" font-size="13" font-weight="bold" font-family="Arial,sans-serif">SOS</text>
+    `;
+  }
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">${svgContent}</svg>`)}`,
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(size / 2, size / 2),
+  };
+}
+
+/** Ícono de unidad móvil top-down estilo Uber, diferenciado por tipoServicio */
+function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: boolean) {
+  const size = isAssigned ? 56 : 44;
+  let svgContent: string;
+
+  const pulse = isAssigned
+    ? `<circle cx="26" cy="26" r="25" fill="none" stroke="#00BFFF" stroke-width="3" stroke-dasharray="4,3"/>`
+    : '';
+
+  if (tipoServicio === 'SALUD') {
+    // Ambulancia top-down: blanca con cruz roja
+    svgContent = `
+      ${pulse}
+      <rect x="10" y="8" width="32" height="36" rx="6" fill="${isActive ? 'white' : '#90A4AE'}" stroke="#C62828" stroke-width="2"/>
+      <rect x="14" y="12" width="24" height="28" rx="4" fill="${isActive ? '#FFEBEE' : '#CFD8DC'}"/>
+      <rect x="20" y="16" width="12" height="20" rx="2" fill="${isActive ? 'white' : '#B0BEC5'}"/>
+      <rect x="19" y="21" width="14" height="5" rx="1.5" fill="#C62828"/>
+      <rect x="23" y="17" width="5" height="13" rx="1.5" fill="#C62828"/>
+      <rect x="12" y="36" width="9" height="6" rx="2" fill="${isActive ? '#CFD8DC' : '#90A4AE'}"/>
+      <rect x="31" y="36" width="9" height="6" rx="2" fill="${isActive ? '#CFD8DC' : '#90A4AE'}"/>
+    `;
+  } else if (tipoServicio === 'BOMBEROS') {
+    // Camión bomberos top-down: rojo
+    svgContent = `
+      ${pulse}
+      <rect x="8" y="6" width="36" height="40" rx="6" fill="${isActive ? '#C62828' : '#78909C'}" stroke="#B71C1C" stroke-width="2"/>
+      <rect x="12" y="10" width="28" height="32" rx="4" fill="${isActive ? '#E53935' : '#90A4AE'}"/>
+      <rect x="14" y="12" width="24" height="14" rx="3" fill="${isActive ? '#FFEBEE' : '#B0BEC5'}"/>
+      <text x="26" y="23" text-anchor="middle" fill="${isActive ? '#C62828' : '#607D8B'}" font-size="10" font-weight="bold" font-family="Arial,sans-serif">🚒</text>
+      <rect x="14" y="30" width="10" height="10" rx="2" fill="${isActive ? '#FFCDD2' : '#CFD8DC'}"/>
+      <rect x="28" y="30" width="10" height="10" rx="2" fill="${isActive ? '#FFCDD2' : '#CFD8DC'}"/>
+      <circle cx="16" cy="42" r="4" fill="${isActive ? '#37474F' : '#546E7A'}"/>
+      <circle cx="36" cy="42" r="4" fill="${isActive ? '#37474F' : '#546E7A'}"/>
+    `;
+  } else {
+    // Patrulla policial top-down: azul oscuro
+    svgContent = `
+      ${pulse}
+      <rect x="10" y="7" width="32" height="38" rx="7" fill="${isActive ? '#0D47A1' : '#546E7A'}" stroke="#1565C0" stroke-width="2"/>
+      <rect x="14" y="11" width="24" height="24" rx="4" fill="${isActive ? '#1565C0' : '#607D8B'}"/>
+      <rect x="15" y="12" width="22" height="11" rx="3" fill="${isActive ? '#BBDEFB' : '#90A4AE'}"/>
+      <rect x="10" y="20" width="4" height="8" rx="2" fill="${isActive ? '#FFD600' : '#B0BEC5'}"/>
+      <rect x="38" y="20" width="4" height="8" rx="2" fill="${isActive ? '#FFD600' : '#B0BEC5'}"/>
+      <circle cx="16" cy="38" r="4" fill="${isActive ? '#212121' : '#546E7A'}"/>
+      <circle cx="36" cy="38" r="4" fill="${isActive ? '#212121' : '#546E7A'}"/>
+      <rect x="20" y="36" width="12" height="6" rx="2" fill="${isActive ? '#BBDEFB' : '#90A4AE'}"/>
+    `;
+  }
+
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 52 52">${svgContent}</svg>`)}`,
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(size / 2, size / 2),
+  };
+}
 
 const libraries: "places"[] = ["places"];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyDHJ4wqFcxgTNgx7OmPtcATnjv5mym24rs";
@@ -69,8 +176,9 @@ const MapDashboardInner = () => {
     libraries
   });
 
-  const { emergencias } = useEmergencias();
-  const { patrulleros } = usePatrulleros();
+  const { rol } = useAuth();
+  const { emergencias } = useEmergencias(rol);
+  const { patrulleros } = usePatrulleros(rol);
 
   const [selectedEmergenciaId, setSelectedEmergenciaId] = useState<string | null>(null);
   const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
@@ -311,9 +419,11 @@ const MapDashboardInner = () => {
             </div>
 
             <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Patrulla</div>
+              <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Unidad Asignada</div>
               <div style={{ fontWeight: 'bold' }}>
-                {activePatrol ? `🚔 ${activePatrol.nombre}` : '⏳ Sin asignar'}
+                {activePatrol
+                  ? `${activePatrol.tipoServicio === 'SALUD' ? '🚑' : activePatrol.tipoServicio === 'BOMBEROS' ? '🚒' : '🚔'} ${activePatrol.nombre}`
+                  : '⏳ Sin asignar'}
               </div>
             </div>
 
@@ -388,57 +498,32 @@ const MapDashboardInner = () => {
             />
           )}
 
-          {/* Marcadores de Emergencia — Círculo rojo con SOS */}
+          {/* Marcadores de Emergencia — diferenciados por tipo de servicio */}
           {emergenciasFiltradas.map((e) => {
             const isCoac = e.estado === EstadoEmergencia.COACCION;
             const isSelected = selectedEmergencia?.id === e.id;
-            const markerSize = isSelected ? 60 : 48;
-            const sosIcon = {
-              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="${markerSize}" height="${markerSize}" viewBox="0 0 56 56">
-                  <circle cx="28" cy="28" r="27" fill="${isCoac ? '#6A0DAD' : '#D32F2F'}" opacity="${isSelected ? '0.5' : '0.3'}"/>
-                  <circle cx="28" cy="28" r="21" fill="${isCoac ? '#6A0DAD' : '#D32F2F'}"/>
-                  <circle cx="28" cy="28" r="21" fill="none" stroke="white" stroke-width="${isSelected ? '3' : '2'}"/>
-                  <text x="28" y="34" text-anchor="middle" fill="white" font-size="14" font-weight="bold" font-family="Arial,sans-serif">${isCoac ? '⚠' : 'SOS'}</text>
-                </svg>
-              `)}`,
-              scaledSize: new google.maps.Size(markerSize, markerSize),
-              anchor: new google.maps.Point(markerSize / 2, markerSize / 2),
-            };
+            const icon = getEmergenciaIcon(e.tipo, isSelected, isCoac);
             return (
               <MarkerF
                 key={e.id}
                 position={{ lat: e.latitudActual ?? e.latitud, lng: e.longitudActual ?? e.longitud }}
-                icon={sosIcon}
+                icon={icon}
                 zIndex={isSelected ? 1000 : 100}
                 onClick={() => handleSelectEmergencia(e)}
               />
             );
           })}
 
-          {/* Marcadores de Patrulleros — Escudo policial azul con estrella */}
+          {/* Marcadores de Unidades — Top-down estilo Uber por tipo de servicio */}
           {patrullerosFiltrados.map((p) => {
             const isActive = p.estado === EstadoPatrullero.EN_SERVICIO;
             const isAssigned = selectedEmergencia?.patrullaAsignadaId === p.uid;
-            const markerSize = isAssigned ? 56 : 44;
-            const policeIcon = {
-              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="${markerSize}" height="${markerSize}" viewBox="0 0 52 52">
-                  ${isAssigned ? '<circle cx="26" cy="26" r="25" fill="none" stroke="#00BFFF" stroke-width="3" stroke-dasharray="4,3"/>' : ''}
-                  <circle cx="26" cy="26" r="24" fill="${isActive ? '#0D47A1' : '#37474F'}"/>
-                  <circle cx="26" cy="26" r="24" fill="none" stroke="#FFD700" stroke-width="2.5"/>
-                  <polygon points="26,10 29.5,20.5 40,20.5 31.5,26.5 34.5,37 26,31 17.5,37 20.5,26.5 12,20.5 22.5,20.5" fill="#FFD700"/>
-                  <text x="26" y="30" text-anchor="middle" fill="#0D47A1" font-size="11" font-weight="bold" font-family="Arial,sans-serif">P</text>
-                </svg>
-              `)}`,
-              scaledSize: new google.maps.Size(markerSize, markerSize),
-              anchor: new google.maps.Point(markerSize / 2, markerSize / 2),
-            };
+            const icon = getUnidadIcon(p.tipoServicio, isActive, isAssigned);
             return (
               <MarkerF
                 key={p.uid}
                 position={{ lat: p.latitud, lng: p.longitud }}
-                icon={policeIcon}
+                icon={icon}
                 zIndex={isAssigned ? 999 : 50}
               />
             );
@@ -491,7 +576,7 @@ const MapDashboardInner = () => {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ color: 'white', fontWeight: 'bold', fontSize: '0.8rem' }}>
-                        {e.tipo === 'SOS' ? '🔴' : '🟠'} {e.vecinoNombre || e.vecinoDni || 'Vecino'}
+                        {e.tipo === 'BOMBEROS' ? '🔥' : e.tipo === 'SALUD' ? '➕' : '🆘'} {e.vecinoNombre || e.vecinoDni || 'Vecino'}
                       </span>
                       <span style={{
                         fontSize: '0.65rem',
@@ -507,7 +592,9 @@ const MapDashboardInner = () => {
                       </span>
                     </div>
                     <div style={{ color: '#aaa', fontSize: '0.7rem', marginTop: '2px' }}>
-                      {assignedPatrol ? `🚔 ${assignedPatrol.nombre}` : '⏳ Sin patrulla'}
+                      {assignedPatrol
+                        ? `${(assignedPatrol as Patrullero).tipoServicio === 'SALUD' ? '🚑' : (assignedPatrol as Patrullero).tipoServicio === 'BOMBEROS' ? '🚒' : '🚔'} ${assignedPatrol.nombre}`
+                        : '⏳ Sin unidad'}
                       {' · '}
                       {Math.floor((now - e.timestampMs) / 60000)} min
                     </div>

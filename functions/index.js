@@ -6,6 +6,12 @@ admin.initializeApp();
 const db = admin.firestore();
 const messaging = admin.messaging();
 
+// Tipos de servicio válidos
+const TIPOS_SERVICIO_VALIDOS = ['POLICIA', 'SALUD', 'BOMBEROS'];
+
+// Roles de operador válidos
+const ROLES_OPERADOR_VALIDOS = ['ADMIN', 'POLICIA', 'SALUD', 'BOMBEROS'];
+
 // =============================================================================
 // UTILIDADES
 // =============================================================================
@@ -62,10 +68,20 @@ async function findUsuarioByUid(uid) {
     return null;
 }
 
+// Obtener etiqueta legible del tipo de servicio para notificaciones
+function getLabelServicio(tipo) {
+    switch (tipo) {
+        case 'POLICIA':   return { emoji: '🚔', nombre: 'Patrullero' };
+        case 'SALUD':     return { emoji: '🚑', nombre: 'Ambulancia' };
+        case 'BOMBEROS':  return { emoji: '🚒', nombre: 'Bomberos' };
+        default:          return { emoji: '🚨', nombre: 'Unidad' };
+    }
+}
+
 // =============================================================================
-// 1. DESPACHO AUTOMÁTICO — onCreate emergencias (GEN 2)
+// 1. DESPACHO AUTOMÁTICO POR TIPO DE SERVICIO — onCreate emergencias
 // =============================================================================
-exports.asignarPatrulleroCercano = onDocumentCreated('emergencias/{emergenciaId}', async (event) => {
+exports.asignarUnidadCercana = onDocumentCreated('emergencias/{emergenciaId}', async (event) => {
     const snap = event.data;
     const emergencia = snap.data();
     const emergenciaId = event.params.emergenciaId;
@@ -79,78 +95,84 @@ exports.asignarPatrulleroCercano = onDocumentCreated('emergencias/{emergenciaId}
     const eLon = emergencia.longitud;
     const isCoaccion = emergencia.estado === 'COACCION';
 
+    // Tipo de servicio requerido por la emergencia
+    const tipoServicio = emergencia.tipo; // 'POLICIA' | 'SALUD' | 'BOMBEROS'
+    if (!TIPOS_SERVICIO_VALIDOS.includes(tipoServicio)) {
+        console.warn(`Tipo de servicio inválido "${tipoServicio}" en emergencia ${emergenciaId}`);
+        await registrarAuditoria('TIPO_INVALIDO', 'system', emergenciaId, `Tipo recibido: ${tipoServicio}`);
+        return null;
+    }
+
     try {
-        const patrullerosSnapshot = await db.collection('patrulleros')
+        // Buscar unidades disponibles del tipo correcto
+        const unidadesSnapshot = await db.collection('patrulleros')
             .where('estado', '==', 'DISPONIBLE')
+            .where('tipoServicio', '==', tipoServicio)
             .get();
 
-        if (patrullerosSnapshot.empty) {
-            console.log('No hay patrulleros disponibles para:', emergenciaId);
-            await registrarAuditoria('SIN_PATRULLEROS', 'system', emergenciaId, 'No se encontraron unidades disponibles');
+        if (unidadesSnapshot.empty) {
+            console.log(`No hay unidades de ${tipoServicio} disponibles para: ${emergenciaId}`);
+            await registrarAuditoria('SIN_UNIDADES', 'system', emergenciaId,
+                `No se encontraron unidades de tipo ${tipoServicio} disponibles`);
             return null;
         }
 
-        let patrols = [];
-
-        patrullerosSnapshot.forEach(doc => {
-            const pat = doc.data();
-            if (pat.latitud && pat.longitud) {
-                const dist = calculateDistance(eLat, eLon, pat.latitud, pat.longitud);
-                patrols.push({ id: doc.id, dist, ...pat });
+        let unidades = [];
+        unidadesSnapshot.forEach(doc => {
+            const u = doc.data();
+            if (u.latitud && u.longitud) {
+                const dist = calculateDistance(eLat, eLon, u.latitud, u.longitud);
+                unidades.push({ id: doc.id, dist, ...u });
             }
         });
 
-        // Ordenar por distancia
-        patrols.sort((a, b) => a.dist - b.dist);
+        // Ordenar por distancia (la más cercana primero)
+        unidades.sort((a, b) => a.dist - b.dist);
 
-        if (patrols.length === 0) {
+        if (unidades.length === 0) {
+            console.log(`Unidades de ${tipoServicio} sin coordenadas para: ${emergenciaId}`);
             return null;
         }
 
-        const closest = patrols[0];
-
-        console.log(`Asignando patrulla: ${closest.id}`);
+        const closest = unidades[0];
+        console.log(`Asignando unidad ${tipoServicio}: ${closest.id} (dist: ${(closest.dist / 1000).toFixed(2)} km)`);
 
         await db.runTransaction(async (transaction) => {
             const emergRef = db.collection('emergencias').doc(emergenciaId);
-            const updates = {
+            const unidadRef = db.collection('patrulleros').doc(closest.id);
+            transaction.update(unidadRef, { estado: 'EN_SERVICIO' });
+            transaction.update(emergRef, {
                 patrullaAsignadaId: closest.id,
                 estado: isCoaccion ? 'COACCION' : 'DESPACHADA'
-            };
-            const patRef = db.collection('patrulleros').doc(closest.id);
-            transaction.update(patRef, { estado: 'EN_SERVICIO' });
-            transaction.update(emergRef, updates);
+            });
         });
 
-        const notifyPatrol = async (pat) => {
-            if (!pat.tokenFCM) return;
-            // DATA ONLY payload para despertar la app vía Full-Screen Intent en background
+        // Notificar a la unidad asignada via FCM
+        if (closest.tokenFCM) {
             await messaging.send({
-                token: pat.tokenFCM,
+                token: closest.tokenFCM,
                 data: {
                     emergenciaId,
-                    tipo: emergencia.tipo || 'SOS',
+                    tipo: tipoServicio,
                     coaccion: isCoaccion ? 'true' : 'false',
                     accion: 'NUEVA_EMERGENCIA'
                 },
                 android: { priority: 'high' }
             });
-        };
+        }
 
-        await notifyPatrol(closest);
-
-        await registrarAuditoria('DESPACHO_UNICO', 'system', emergenciaId, `Asignado: ${closest.id}`);
+        await registrarAuditoria('DESPACHO_AUTOMATICO', 'system', emergenciaId,
+            `Tipo: ${tipoServicio} | Asignado: ${closest.id} | Distancia: ${(closest.dist / 1000).toFixed(2)} km`);
         return { success: true };
     } catch (error) {
-        console.error("Error asignando patrullero:", error);
+        console.error("Error en despacho automático:", error);
         await registrarAuditoria('ERROR_DESPACHO', 'system', emergenciaId, error.message);
         return null;
     }
 });
 
 // =============================================================================
-// 2. B1 FIX: CONSOLIDADO — onUpdate emergencias
-//    Maneja notificación al vecino Y liberación de patrullero en un solo trigger
+// 2. NOTIFICACIÓN AL VECINO Y LIBERACIÓN DE UNIDAD — onUpdate emergencias
 // =============================================================================
 exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}', async (event) => {
     const change = event.data;
@@ -164,12 +186,12 @@ exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}
     }
 
     const resultados = [];
+    const servicioLabel = getLabelServicio(after.tipo);
 
     // --- PARTE A: Notificar al vecino ---
     const vecinoId = after.vecinoId;
     if (vecinoId) {
         try {
-            // U2: Usar función de búsqueda robusta
             const vecino = await findUsuarioForEmergencia(after);
             if (vecino && vecino.tokenFCM) {
                 let titulo = '';
@@ -177,16 +199,16 @@ exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}
 
                 switch (after.estado) {
                     case 'DESPACHADA':
-                        titulo = '🚔 Patrullero en camino';
-                        cuerpo = 'Una unidad ha sido despachada a su ubicación. Mantenga la calma.';
+                        titulo = `${servicioLabel.emoji} ${servicioLabel.nombre} en camino`;
+                        cuerpo = `Una unidad de ${servicioLabel.nombre} ha sido despachada a su ubicación. Mantenga la calma.`;
                         break;
                     case 'EN_SITIO':
-                        titulo = '✅ Patrullero en el sitio';
-                        cuerpo = 'La unidad ha llegado a su ubicación.';
+                        titulo = `✅ ${servicioLabel.nombre} en el sitio`;
+                        cuerpo = `La unidad de ${servicioLabel.nombre} ha llegado a su ubicación.`;
                         break;
                     case 'RESUELTA':
                         titulo = '📋 Emergencia resuelta';
-                        cuerpo = 'Su emergencia ha sido atendida y cerrada.';
+                        cuerpo = 'Su emergencia ha sido atendida y cerrada. Gracias por reportar.';
                         break;
                 }
 
@@ -194,10 +216,11 @@ exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}
                     await messaging.send({
                         token: vecino.tokenFCM,
                         notification: { title: titulo, body: cuerpo },
-                        data: { emergenciaId, estado: after.estado },
+                        data: { emergenciaId, estado: after.estado, tipo: after.tipo || '' },
                         android: { priority: 'high' }
                     });
-                    await registrarAuditoria('NOTIFICACION_VECINO', 'system', emergenciaId, `Estado cambió de ${before.estado} a ${after.estado}`);
+                    await registrarAuditoria('NOTIFICACION_VECINO', 'system', emergenciaId,
+                        `Estado: ${before.estado} → ${after.estado}`);
                     resultados.push('notificacion_enviada');
                 }
             }
@@ -206,27 +229,28 @@ exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}
         }
     }
 
-    // --- PARTE B: Liberar patrulleros si la emergencia fue resuelta o cancelada ---
+    // --- PARTE B: Liberar unidad si la emergencia fue resuelta o cancelada ---
     if (after.estado === 'RESUELTA' || after.estado === 'CANCELADA') {
-        const liberarPatrulla = async (patId) => {
-            if (!patId) return;
+        const liberarUnidad = async (unidadId) => {
+            if (!unidadId) return;
             try {
-                await db.collection('patrulleros').doc(patId).update({ estado: 'DISPONIBLE' });
-                await registrarAuditoria('PATRULLERO_LIBERADO', 'system', emergenciaId, `Patrullero ${patId} liberado tras ${after.estado.toLowerCase()} de emergencia`);
-                resultados.push(`liberado_${patId}`);
+                await db.collection('patrulleros').doc(unidadId).update({ estado: 'DISPONIBLE' });
+                await registrarAuditoria('UNIDAD_LIBERADA', 'system', emergenciaId,
+                    `Unidad ${unidadId} liberada tras ${after.estado.toLowerCase()}`);
+                resultados.push(`liberada_${unidadId}`);
             } catch (error) {
-                console.error("Error liberando patrullero:", error);
+                console.error("Error liberando unidad:", error);
             }
         };
 
-        await liberarPatrulla(after.patrullaAsignadaId || before.patrullaAsignadaId);
+        await liberarUnidad(after.patrullaAsignadaId || before.patrullaAsignadaId);
     }
 
     return { resultados };
 });
 
 // =============================================================================
-// 3. AUDITORÍA AUTOMÁTICA — onWrite emergencias (GEN 2)
+// 3. AUDITORÍA AUTOMÁTICA — onWrite emergencias
 // =============================================================================
 exports.auditarEmergencia = onDocumentWritten('emergencias/{emergenciaId}', async (event) => {
     const change = event.data;
@@ -234,7 +258,8 @@ exports.auditarEmergencia = onDocumentWritten('emergencias/{emergenciaId}', asyn
 
     if (!change.before.exists) {
         const data = change.after.data();
-        await registrarAuditoria('EMERGENCIA_CREADA', data.vecinoId || 'unknown', emergenciaId, `Tipo: ${data.tipo}, Estado: ${data.estado}`);
+        await registrarAuditoria('EMERGENCIA_CREADA', data.vecinoId || 'unknown', emergenciaId,
+            `Tipo: ${data.tipo}, Estado: ${data.estado}`);
     } else if (!change.after.exists) {
         await registrarAuditoria('EMERGENCIA_ELIMINADA', 'admin', emergenciaId, 'Documento eliminado');
     }
@@ -242,23 +267,44 @@ exports.auditarEmergencia = onDocumentWritten('emergencias/{emergenciaId}', asyn
 });
 
 // =============================================================================
-// 4. CREACIÓN DE PATRULLEROS (AUTH + FIRESTORE)
-// S3 FIX: Autenticación obligatoria habilitada
+// 4. CREAR PATRULLERO (Unidad Móvil) — con tipoServicio obligatorio
 // =============================================================================
 exports.crearPatrullero = onCall(async (request) => {
-    // S3 FIX: Validar autenticación — obligatorio
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Debe estar autenticado como operador C3.');
     }
 
-    const { email, password, codigo, nombre, turno } = request.data;
+    // Verificar que el operador es ADMIN
+    const operadorDoc = await db.collection('operadores_c3').doc(request.auth.uid).get();
+    if (!operadorDoc.exists || operadorDoc.data().rol !== 'ADMIN') {
+        throw new HttpsError('permission-denied', 'Solo el ADMIN puede crear unidades móviles.');
+    }
 
-    if (!email || !password || !codigo || !nombre) {
-        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios.');
+    const { email, password, codigo, nombre, turno, tipoServicio } = request.data;
+
+    if (!email || !password || !codigo || !nombre || !tipoServicio) {
+        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios: email, password, codigo, nombre, tipoServicio.');
+    }
+
+    if (!TIPOS_SERVICIO_VALIDOS.includes(tipoServicio)) {
+        throw new HttpsError('invalid-argument',
+            `tipoServicio inválido. Valores permitidos: ${TIPOS_SERVICIO_VALIDOS.join(', ')}`);
+    }
+
+    if (password.length < 6) {
+        throw new HttpsError('invalid-argument', 'La contraseña debe tener al menos 6 caracteres.');
+    }
+
+    // Verificar código duplicado
+    const codigoExistente = await db.collection('patrulleros')
+        .where('codigo', '==', codigo)
+        .limit(1)
+        .get();
+    if (!codigoExistente.empty) {
+        throw new HttpsError('already-exists', `El código "${codigo}" ya está en uso.`);
     }
 
     try {
-        // 1. Crear usuario en Firebase Auth
         const userRecord = await admin.auth().createUser({
             email,
             password,
@@ -267,25 +313,136 @@ exports.crearPatrullero = onCall(async (request) => {
 
         const uid = userRecord.uid;
 
-        // 2. Crear documento en Firestore usando el UID
         await db.collection('patrulleros').doc(uid).set({
             id: uid,
             codigo,
             nombre,
-            turno,
+            turno: turno || 'DIA',
             email,
+            tipoServicio,                   // POLICIA | SALUD | BOMBEROS
             estado: 'FUERA_DE_SERVICIO',
-            latitud: -11.9765, // Centro Chaclacayo
+            latitud: -11.9765,
             longitud: -76.7725,
             ultimaActualizacion: Date.now(),
             tokenFCM: ''
         });
 
-        await registrarAuditoria('PATRULLERO_CREADO', request.auth.uid, null, `Patrullero creado: ${codigo}`);
+        await registrarAuditoria('PATRULLERO_CREADO', request.auth.uid, null,
+            `Creado: ${codigo} (${tipoServicio})`);
 
         return { success: true, uid };
     } catch (error) {
         console.error("Error creando patrullero:", error);
+        throw new HttpsError('internal', error.message);
+    }
+});
+
+// =============================================================================
+// 5. CREAR OPERADOR C3 — Solo ADMIN puede crear operadores con rol
+// =============================================================================
+exports.crearOperadorC3 = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Debe estar autenticado como operador C3.');
+    }
+
+    // Verificar que el solicitante es ADMIN
+    const solicitanteDoc = await db.collection('operadores_c3').doc(request.auth.uid).get();
+    if (!solicitanteDoc.exists || solicitanteDoc.data().rol !== 'ADMIN') {
+        throw new HttpsError('permission-denied', 'Solo el ADMIN puede crear operadores C3.');
+    }
+
+    const { email, password, nombre, rol } = request.data;
+
+    // Validaciones
+    if (!email || !password || !nombre || !rol) {
+        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios: email, password, nombre, rol.');
+    }
+
+    if (!ROLES_OPERADOR_VALIDOS.includes(rol)) {
+        throw new HttpsError('invalid-argument',
+            `Rol inválido. Valores permitidos: ${ROLES_OPERADOR_VALIDOS.join(', ')}`);
+    }
+
+    if (password.length < 8) {
+        throw new HttpsError('invalid-argument', 'La contraseña del operador debe tener al menos 8 caracteres.');
+    }
+
+    // No permitir crear otro ADMIN desde aquí (medida de seguridad)
+    if (rol === 'ADMIN') {
+        throw new HttpsError('permission-denied',
+            'No se pueden crear operadores con rol ADMIN desde este formulario. Contacte al super-administrador.');
+    }
+
+    try {
+        // Crear usuario en Firebase Auth
+        const userRecord = await admin.auth().createUser({
+            email,
+            password,
+            displayName: nombre,
+        });
+
+        const uid = userRecord.uid;
+
+        // Crear documento en operadores_c3
+        await db.collection('operadores_c3').doc(uid).set({
+            uid,
+            nombre,
+            email,
+            rol,
+            creadoPor: request.auth.uid,
+            creadoEn: admin.firestore.FieldValue.serverTimestamp(),
+            activo: true
+        });
+
+        await registrarAuditoria('OPERADOR_CREADO', request.auth.uid, null,
+            `Operador: ${email} | Rol: ${rol}`);
+
+        return { success: true, uid };
+    } catch (error) {
+        if (error.code === 'auth/email-already-exists') {
+            throw new HttpsError('already-exists', 'Ya existe un usuario con ese correo electrónico.');
+        }
+        console.error("Error creando operador C3:", error);
+        throw new HttpsError('internal', error.message);
+    }
+});
+
+// =============================================================================
+// 6. RESETEAR DISPOSITIVO VECINO — Solo ADMIN puede hacerlo
+// =============================================================================
+exports.resetearDispositivoVecino = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Debe estar autenticado.');
+    }
+
+    // Verificar que el solicitante es ADMIN
+    const operadorDoc = await db.collection('operadores_c3').doc(request.auth.uid).get();
+    if (!operadorDoc.exists || operadorDoc.data().rol !== 'ADMIN') {
+        throw new HttpsError('permission-denied', 'Solo el ADMIN puede resetear dispositivos de vecinos.');
+    }
+
+    const { vecinoDni } = request.data;
+    if (!vecinoDni) {
+        throw new HttpsError('invalid-argument', 'Se requiere el DNI del vecino.');
+    }
+
+    try {
+        const vecinoRef = db.collection('usuarios').doc(vecinoDni);
+        const vecinoDoc = await vecinoRef.get();
+
+        if (!vecinoDoc.exists) {
+            throw new HttpsError('not-found', `No se encontró vecino con DNI: ${vecinoDni}`);
+        }
+
+        await vecinoRef.update({ deviceId: '' });
+
+        await registrarAuditoria('DISPOSITIVO_RESETEADO', request.auth.uid, null,
+            `DNI vecino: ${vecinoDni}`);
+
+        return { success: true };
+    } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        console.error("Error reseteando dispositivo:", error);
         throw new HttpsError('internal', error.message);
     }
 });

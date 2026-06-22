@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { usePatrulleros } from '../hooks/usePatrulleros';
+import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
+import { SERVICIO_CONFIG, TipoServicio } from '../types/enums';
 
-// O2: Helper para formatear tiempo relativo
 const formatTimeAgo = (timestampMs: number | undefined): string => {
   if (!timestampMs) return 'Sin datos';
   const diff = Date.now() - timestampMs;
@@ -15,43 +16,59 @@ const formatTimeAgo = (timestampMs: number | undefined): string => {
   return `hace ${hours}h ${minutes % 60}m`;
 };
 
-// O3: Verificar si el patrullero está desactualizado (>30 min sin señal)
 const isStale = (timestampMs: number | undefined): boolean => {
   if (!timestampMs) return true;
   return Date.now() - timestampMs > 30 * 60 * 1000;
 };
 
+const TURNO_OPTIONS = ['DIA', 'NOCHE'] as const;
+
 export const PatrullerosPage = () => {
-  const { patrulleros } = usePatrulleros();
+  const { rol } = useAuth();
+  const { patrulleros } = usePatrulleros(rol);
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ codigo: '', nombre: '', turno: 'DIA', email: '', password: '' });
+  const [formData, setFormData] = useState({
+    codigo: '',
+    nombre: '',
+    turno: 'DIA',
+    tipoServicio: (rol === 'ADMIN' ? '' : rol) as TipoServicio | '',
+    email: '',
+    password: '',
+  });
 
   const handleCrear = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    if (!formData.codigo || !formData.nombre || !formData.email || !formData.password) {
-      setErrorMsg('Por favor completa todos los campos.');
+
+    if (!formData.codigo || !formData.nombre || !formData.email || !formData.password || !formData.tipoServicio) {
+      setErrorMsg('Por favor completa todos los campos, incluyendo el Tipo de Servicio.');
       return;
     }
-    
+
+    if (formData.password.length < 6) {
+      setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const crearPatrulleroFn = httpsCallable(functions, 'crearPatrullero');
       await crearPatrulleroFn({
-        codigo: formData.codigo,
-        nombre: formData.nombre,
+        codigo: formData.codigo.trim().toUpperCase(),
+        nombre: formData.nombre.trim(),
         turno: formData.turno,
-        email: formData.email,
-        password: formData.password
+        tipoServicio: formData.tipoServicio,
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
       });
-      
+
       setShowModal(false);
-      setFormData({ codigo: '', nombre: '', turno: 'DIA', email: '', password: '' });
+      setFormData({ codigo: '', nombre: '', turno: 'DIA', tipoServicio: '', email: '', password: '' });
     } catch (error: any) {
-      const msg = error?.message || 'Error desconocido al crear patrullero';
-      console.error("Error al crear patrullero:", error);
+      const msg = error?.message || 'Error desconocido al crear unidad';
+      console.error('Error al crear patrullero:', error);
       setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
@@ -60,44 +77,44 @@ export const PatrullerosPage = () => {
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
-      case 'DISPONIBLE': return 'var(--c3-success, #4CAF50)';
-      case 'EN_SERVICIO': return 'var(--c3-warning-dark, #F57C00)';
-      default: return '#757575';
+      case 'DISPONIBLE':        return 'var(--c3-success, #4CAF50)';
+      case 'EN_SERVICIO':       return 'var(--c3-warning-dark, #F57C00)';
+      default:                  return '#757575';
     }
   };
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <header className="page-header">
-        <h1 className="page-header__title" id="patrulleros-heading">Gestión de Patrulleros</h1>
-        <button 
+        <h1 className="page-header__title" id="patrulleros-heading">Gestión de Unidades Móviles</h1>
+        <button
           id="add-patrullero-btn"
           onClick={() => setShowModal(true)}
           className="btn btn--primary"
-          aria-label="Agregar nueva unidad de patrullaje"
+          aria-label="Agregar nueva unidad móvil"
         >
           + Nueva Unidad
         </button>
       </header>
-      
+
       <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }} role="region" aria-labelledby="patrulleros-heading">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
           {patrulleros.map(p => {
             const stale = isStale(p.ultimaActualizacion);
             const shouldWarn = stale && p.estado !== 'FUERA_DE_SERVICIO';
+            const servCfg = SERVICIO_CONFIG[p.tipoServicio] ?? { emoji: '❓', label: p.tipoServicio, color: '#666', bgColor: '#eee' };
 
             return (
               <article
                 key={p.uid}
                 className="card"
                 style={{
-                  borderLeft: `4px solid ${getEstadoColor(p.estado)}`,
+                  borderLeft: `4px solid ${servCfg.color}`,
                   opacity: shouldWarn ? 0.7 : 1,
                   position: 'relative'
                 }}
-                aria-label={`Patrullero ${p.nombre}, estado: ${p.estado}${shouldWarn ? ', sin señal reciente' : ''}`}
+                aria-label={`Unidad ${p.nombre}, tipo: ${servCfg.label}, estado: ${p.estado}${shouldWarn ? ', sin señal reciente' : ''}`}
               >
-                {/* O3: Badge de sin señal */}
                 {shouldWarn && (
                   <div style={{
                     position: 'absolute', top: '8px', right: '8px',
@@ -108,21 +125,31 @@ export const PatrullerosPage = () => {
                   </div>
                 )}
 
+                {/* Badge de tipo de servicio */}
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  background: servCfg.bgColor, color: servCfg.color,
+                  padding: '2px 8px', borderRadius: '12px',
+                  fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '8px'
+                }}>
+                  {servCfg.emoji} {servCfg.label}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <h3 style={{ margin: '0 0 4px 0' }}>{p.nombre}</h3>
                     <span style={{ fontSize: '0.8rem', color: 'var(--c3-text-secondary)', background: '#eee', padding: '2px 6px', borderRadius: '4px' }}>
-                      {p.codigo} - Turno: {p.turno}
+                      {p.codigo} — Turno: {p.turno}
                     </span>
                   </div>
                   <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: getEstadoColor(p.estado) }} role="status">
                     {p.estado}
                   </span>
                 </div>
+
                 <p style={{ fontSize: '0.85rem', color: 'var(--c3-text-secondary)', marginTop: '12px', marginBottom: '4px' }}>
                   <span aria-hidden="true">📍</span> {p.latitud?.toFixed(4) ?? 'N/A'}, {p.longitud?.toFixed(4) ?? 'N/A'}
                 </p>
-                {/* O2: Última señal con tiempo relativo */}
                 <p style={{
                   fontSize: '0.75rem',
                   color: shouldWarn ? '#FF5252' : 'var(--c3-text-muted)',
@@ -135,7 +162,7 @@ export const PatrullerosPage = () => {
             );
           })}
           {patrulleros.length === 0 && (
-            <p style={{ color: 'var(--c3-text-muted)' }}>No hay patrulleros registrados.</p>
+            <p style={{ color: 'var(--c3-text-muted)' }}>No hay unidades registradas para este servicio.</p>
           )}
         </div>
       </div>
@@ -144,40 +171,120 @@ export const PatrullerosPage = () => {
       {showModal && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <div className="modal-content">
-            <h2 id="modal-title">Nueva Unidad</h2>
+            <h2 id="modal-title">Nueva Unidad Móvil</h2>
             {errorMsg && (
               <div style={{ background: '#FFEBEE', color: '#C62828', padding: '10px', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem' }}>
                 {errorMsg}
               </div>
             )}
             <form onSubmit={handleCrear} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+              {/* Tipo de Servicio — Selector visual */}
               <div className="form-group">
-                <label htmlFor="pat-codigo" className="form-label">Código (Ej. P-01)</label>
-                <input id="pat-codigo" required value={formData.codigo} onChange={e => setFormData({...formData, codigo: e.target.value})} className="form-input" aria-required="true" />
+                <label className="form-label">Tipo de Servicio <span style={{ color: '#C62828' }}>*</span></label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {(Object.values(TipoServicio) as TipoServicio[])
+                    .filter(tipo => rol === 'ADMIN' || tipo === rol) // Solo muestra su rol si no es admin
+                    .map(tipo => {
+                    const cfg = SERVICIO_CONFIG[tipo];
+                    const selected = formData.tipoServicio === tipo;
+                    return (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, tipoServicio: tipo })}
+                        disabled={rol !== 'ADMIN'} // Bloqueado si no es admin
+                        style={{
+                          flex: 1, minWidth: '90px',
+                          padding: '10px 8px',
+                          borderRadius: '8px',
+                          border: selected ? `2px solid ${cfg.color}` : '2px solid #ddd',
+                          background: selected ? cfg.bgColor : 'white',
+                          color: selected ? cfg.color : '#555',
+                          fontWeight: selected ? 'bold' : 'normal',
+                          cursor: rol === 'ADMIN' ? 'pointer' : 'default',
+                          fontSize: '0.85rem',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                          transition: 'all 0.15s',
+                        }}
+                        aria-pressed={selected}
+                      >
+                        <span style={{ fontSize: '1.4rem' }}>{cfg.emoji}</span>
+                        {cfg.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+
               <div className="form-group">
-                <label htmlFor="pat-nombre" className="form-label">Nombre (Ej. Unidad Alpha)</label>
-                <input id="pat-nombre" required value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} className="form-input" aria-required="true" />
+                <label htmlFor="pat-codigo" className="form-label">Código (Ej. P-01) <span style={{ color: '#C62828' }}>*</span></label>
+                <input
+                  id="pat-codigo" required
+                  value={formData.codigo}
+                  onChange={e => setFormData({ ...formData, codigo: e.target.value })}
+                  className="form-input" aria-required="true"
+                  placeholder="P-01, S-01, B-01..."
+                />
               </div>
+
+              <div className="form-group">
+                <label htmlFor="pat-nombre" className="form-label">Nombre de la unidad <span style={{ color: '#C62828' }}>*</span></label>
+                <input
+                  id="pat-nombre" required
+                  value={formData.nombre}
+                  onChange={e => setFormData({ ...formData, nombre: e.target.value })}
+                  className="form-input" aria-required="true"
+                  placeholder="Unidad Alpha, Ambulancia 1..."
+                />
+              </div>
+
               <div className="form-group">
                 <label htmlFor="pat-turno" className="form-label">Turno</label>
-                <select id="pat-turno" value={formData.turno} onChange={e => setFormData({...formData, turno: e.target.value})} className="form-select">
-                  <option value="DIA">Día</option>
-                  <option value="NOCHE">Noche</option>
+                <select
+                  id="pat-turno"
+                  value={formData.turno}
+                  onChange={e => setFormData({ ...formData, turno: e.target.value })}
+                  className="form-select"
+                >
+                  {TURNO_OPTIONS.map(t => (
+                    <option key={t} value={t}>{t === 'DIA' ? '☀️ Día' : '🌙 Noche'}</option>
+                  ))}
                 </select>
               </div>
+
               <div className="form-group">
-                <label htmlFor="pat-email" className="form-label">Correo electrónico (Acceso App)</label>
-                <input id="pat-email" type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="form-input" aria-required="true" />
+                <label htmlFor="pat-email" className="form-label">Correo electrónico (acceso a la app) <span style={{ color: '#C62828' }}>*</span></label>
+                <input
+                  id="pat-email" type="email" required
+                  value={formData.email}
+                  onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  className="form-input" aria-required="true"
+                />
               </div>
+
               <div className="form-group">
-                <label htmlFor="pat-password" className="form-label">Contraseña</label>
-                <input id="pat-password" type="password" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="form-input" minLength={6} aria-required="true" />
+                <label htmlFor="pat-password" className="form-label">Contraseña <span style={{ color: '#C62828' }}>*</span></label>
+                <input
+                  id="pat-password" type="password" required
+                  value={formData.password}
+                  onChange={e => setFormData({ ...formData, password: e.target.value })}
+                  className="form-input" minLength={6} aria-required="true"
+                />
+                <small style={{ color: '#888' }}>Mínimo 6 caracteres</small>
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1rem' }}>
-                <button type="button" disabled={isSubmitting} onClick={() => setShowModal(false)} className="btn btn--ghost">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="btn btn--primary" aria-busy={isSubmitting} style={{ opacity: isSubmitting ? 0.7 : 1 }}>
-                  {isSubmitting ? 'Guardando...' : 'Guardar'}
+                <button type="button" disabled={isSubmitting} onClick={() => { setShowModal(false); setErrorMsg(null); }} className="btn btn--ghost">
+                  Cancelar
+                </button>
+                <button
+                  type="submit" disabled={isSubmitting}
+                  className="btn btn--primary"
+                  aria-busy={isSubmitting}
+                  style={{ opacity: isSubmitting ? 0.7 : 1 }}
+                >
+                  {isSubmitting ? 'Guardando...' : 'Crear Unidad'}
                 </button>
               </div>
             </form>
