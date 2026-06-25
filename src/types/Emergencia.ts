@@ -14,6 +14,7 @@ export interface Emergencia {
   tipo: TipoEmergencia;
   audioUrl: string | null;
   patrullaAsignadaId: string | null;
+  patrullaApoyoId?: string | null;
   alertaWebSilenciada?: boolean;
   timestampMs: number;
 }

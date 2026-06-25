@@ -446,3 +446,9 @@ exports.resetearDispositivoVecino = onCall(async (request) => {
         throw new HttpsError('internal', error.message);
     }
 });
+
+// Exportaciones para testing
+if (process.env.NODE_ENV === 'test') {
+    exports.calculateDistance = calculateDistance;
+    exports.getLabelServicio = getLabelServicio;
+}

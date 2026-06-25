@@ -114,7 +114,7 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
 }
 
 const libraries: "places"[] = ["places"];
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyDHJ4wqFcxgTNgx7OmPtcATnjv5mym24rs";
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
 const mapContainerStyle = {
   height: "100%",

@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "emergencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "timestampMs", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "emergencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "timestampMs", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "emergencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

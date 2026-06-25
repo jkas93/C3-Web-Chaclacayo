@@ -50,7 +50,7 @@ export const EmergencyAlertOverlay = () => {
       {/* Alarma sonora */}
       <audio
         ref={audioRef}
-        src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
+        src="/audio/alarm.ogg"
         loop
         preload="auto"
       />

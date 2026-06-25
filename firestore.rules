@@ -18,8 +18,12 @@ service cloud.firestore {
                       resource.data.patrullaAsignadaId == request.auth.uid
                       // O el vecino que creó la emergencia puede actualizar su ubicación actual
                       || resource.data.vecinoId == request.auth.uid
-                      // P1: Operador C3 puede gestionar cualquier emergencia
-                      || exists(/databases/$(database)/documents/operadores_c3/$(request.auth.uid))
+                      // P1: Operador C3 puede gestionar emergencias de su tipo o todas si es ADMIN
+                      || (exists(/databases/$(database)/documents/operadores_c3/$(request.auth.uid)) 
+                          && (
+                            get(/databases/$(database)/documents/operadores_c3/$(request.auth.uid)).data.rol == 'ADMIN' ||
+                            get(/databases/$(database)/documents/operadores_c3/$(request.auth.uid)).data.rol == resource.data.tipo
+                          ))
                     );
       allow delete: if false;
     }

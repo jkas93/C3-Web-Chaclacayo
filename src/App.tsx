@@ -7,7 +7,6 @@ import { PatrullerosPage } from './pages/PatrullerosPage';
 import { UsuariosPage } from './pages/UsuariosPage';
 import { HistorialPage } from './pages/HistorialPage';
 import { OperadoresPage } from './pages/OperadoresPage';
-import 'leaflet/dist/leaflet.css';
 import './App.css';
 
 function App() {
@@ -21,7 +20,14 @@ function App() {
             <Route path="patrulleros" element={<PatrullerosPage />} />
             <Route path="usuarios" element={<UsuariosPage />} />
             <Route path="historial" element={<HistorialPage />} />
-            <Route path="operadores" element={<OperadoresPage />} />
+            <Route 
+              path="operadores" 
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN']}>
+                  <OperadoresPage />
+                </ProtectedRoute>
+              } 
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

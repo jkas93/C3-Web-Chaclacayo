@@ -37,25 +37,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        if (import.meta.env.VITE_DEV_MODE === 'true') {
-          // Modo desarrollo: todos los autenticados son ADMIN
-          setIsOperator(true);
-          setRol('ADMIN');
-        } else {
-          try {
-            const operatorDoc = await getDoc(doc(db, 'operadores_c3', firebaseUser.uid));
-            if (operatorDoc.exists()) {
-              const data = operatorDoc.data();
-              setIsOperator(true);
-              setRol((data.rol as RolOperador) ?? null);
-            } else {
-              setIsOperator(false);
-              setRol(null);
-            }
-          } catch {
+        try {
+          const operatorDoc = await getDoc(doc(db, 'operadores_c3', firebaseUser.uid));
+          if (operatorDoc.exists()) {
+            const data = operatorDoc.data();
+            setIsOperator(true);
+            setRol((data.rol as RolOperador) ?? null);
+          } else {
             setIsOperator(false);
             setRol(null);
           }
+        } catch {
+          setIsOperator(false);
+          setRol(null);
         }
       } else {
         setIsOperator(false);
