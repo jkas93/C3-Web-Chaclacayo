@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
@@ -66,8 +66,8 @@ export const PatrullerosPage = () => {
 
       setShowModal(false);
       setFormData({ codigo: '', nombre: '', turno: 'DIA', tipoServicio: '', email: '', password: '' });
-    } catch (error: any) {
-      const msg = error?.message || 'Error desconocido al crear unidad';
+    } catch (error) {
+      const msg = (error instanceof Error ? error.message : String(error)) || 'Error desconocido al crear unidad';
       console.error('Error al crear patrullero:', error);
       setErrorMsg(msg);
     } finally {

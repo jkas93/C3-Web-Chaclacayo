@@ -334,6 +334,23 @@
 
 /* --- Responsive (14. Breakpoints) --- */
 @media (max-width: 768px) {
+  .mobile-toggle-btn {
+    display: flex;
+    alignItems: center;
+    justifyContent: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 2001;
+    background: var(--c3-primary);
+    color: white;
+    border: none;
+    border-radius: var(--c3-radius-sm);
+    padding: 8px;
+    cursor: pointer;
+    box-shadow: var(--c3-shadow-sm);
+  }
+
   .app-sidebar {
     position: fixed;
     left: -var(--c3-sidebar-width);
@@ -354,6 +371,7 @@
     flex-direction: column;
     gap: var(--c3-space-sm);
     align-items: flex-start;
+    padding-left: 60px; /* Make room for mobile toggle */
   }
 
   .modal-content {
@@ -375,4 +393,8 @@
   .page-header__title {
     font-size: 1.1rem;
   }
+}
+
+.mobile-toggle-btn {
+  display: none; /* Hidden on desktop */
 }

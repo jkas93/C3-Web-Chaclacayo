@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { renderHook } from '@testing-library/react-hooks';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useEmergencias } from '../useEmergencias';
 
 // Mock simple de firebase y del AuthContext para testing

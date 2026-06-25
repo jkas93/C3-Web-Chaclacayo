@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
@@ -77,8 +77,8 @@ export const OperadoresPage = () => {
       });
       setShowModal(false);
       setFormData({ nombre: '', email: '', password: '', confirmPassword: '', rol: '' });
-    } catch (error: any) {
-      setErrorMsg(error?.message || 'Error desconocido al crear el operador.');
+    } catch (error) {
+      setErrorMsg((error instanceof Error ? error.message : String(error)) || 'Error desconocido al crear el operador.');
     } finally {
       setIsSubmitting(false);
     }

@@ -3,11 +3,16 @@ import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { SERVICIO_CONFIG } from '../types/enums';
+import { useEmergencias } from '../hooks/useEmergencias';
+import { Map, AlertTriangle, Car, Users, History, Shield, LogOut, Menu, X } from 'lucide-react';
 
 export const Layout = () => {
   const { logout, rol, isAdmin } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { emergencias } = useEmergencias(rol);
+
+  const pendientesCount = emergencias.filter(e => e.estado === 'PENDIENTE').length;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -29,46 +34,38 @@ export const Layout = () => {
     }
   }, [rol, isAdmin]);
 
-  // Obtener etiqueta del rol actual para mostrar en el sidebar
   const rolLabel = isAdmin
-    ? { emoji: '👑', label: 'Administrador', color: '#5C35C4' }
+    ? { icon: <Shield size={14} />, label: 'Administrador', color: '#5C35C4' }
     : rol
-      ? { ...SERVICIO_CONFIG[rol as keyof typeof SERVICIO_CONFIG], label: `Operador ${SERVICIO_CONFIG[rol as keyof typeof SERVICIO_CONFIG]?.label ?? rol}` }
+      ? { icon: <Shield size={14} />, label: `Operador ${SERVICIO_CONFIG[rol as keyof typeof SERVICIO_CONFIG]?.label ?? rol}` }
       : null;
 
   const navItems = [
-    { path: '/', label: '🗺️ Mapa Táctico', id: 'nav-map' },
-    { path: '/emergencias', label: '📋 Incidentes', id: 'nav-emergencias' },
-    { path: '/patrulleros', label: '🚗 Unidades', id: 'nav-patrulleros' },
-    { path: '/usuarios', label: '👥 Vecinos', id: 'nav-usuarios' },
-    { path: '/historial', label: '📊 Historial', id: 'nav-historial' },
-    // Ruta de operadores: solo visible para ADMIN
-    ...(isAdmin ? [{ path: '/operadores', label: '🔐 Operadores', id: 'nav-operadores' }] : []),
+    { path: '/', label: 'Mapa Táctico', id: 'nav-map', icon: <Map size={20} /> },
+    { path: '/emergencias', label: 'Incidentes', id: 'nav-emergencias', icon: <AlertTriangle size={20} />, count: pendientesCount },
+    { path: '/patrulleros', label: 'Unidades', id: 'nav-patrulleros', icon: <Car size={20} /> },
+    { path: '/usuarios', label: 'Vecinos', id: 'nav-usuarios', icon: <Users size={20} /> },
+    { path: '/historial', label: 'Historial', id: 'nav-historial', icon: <History size={20} /> },
+    ...(isAdmin ? [{ path: '/operadores', label: 'Operadores', id: 'nav-operadores', icon: <Shield size={20} /> }] : []),
   ];
 
   return (
     <>
       <EmergencyAlertOverlay />
       <div className="app-layout">
-        {/* A6: Skip navigation link */}
         <a href="#main-content" className="skip-link">
           Saltar al contenido principal
         </a>
 
         {/* Mobile menu toggle */}
         <button
-          className="btn btn--primary"
+          className="mobile-toggle-btn"
           onClick={() => setSidebarOpen(!sidebarOpen)}
           aria-label="Abrir menú de navegación"
           aria-expanded={sidebarOpen}
-          style={{
-            display: 'none',
-            position: 'fixed', top: 12, left: 12, zIndex: 2001,
-            padding: '8px 12px', fontSize: '1.2rem'
-          }}
           id="mobile-menu-toggle"
         >
-          ☰
+          {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
         {/* Sidebar */}
@@ -77,24 +74,29 @@ export const Layout = () => {
           role="navigation"
           aria-label="Menú principal"
         >
-          <div className="app-sidebar__header">
-            <h2 className="app-sidebar__title">C3 Chaclacayo</h2>
-            <span className="app-sidebar__subtitle">Centro de Comando</span>
-            {/* Badge de rol del operador actual */}
-            {rolLabel && (
+          <div className="app-sidebar__header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img src="/c3_logo.png" alt="C3 Logo" style={{ width: '40px', height: '40px' }} />
+            <div>
+              <h2 className="app-sidebar__title">C3 Chaclacayo</h2>
+              <span className="app-sidebar__subtitle">Centro de Comando</span>
+            </div>
+          </div>
+          
+          {rolLabel && (
+            <div style={{ padding: '0 var(--c3-space-lg)' }}>
               <div style={{
                 marginTop: '8px',
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
                 background: 'rgba(255,255,255,0.1)',
                 color: 'rgba(255,255,255,0.9)',
-                padding: '3px 10px', borderRadius: '12px',
+                padding: '4px 12px', borderRadius: '16px',
                 fontSize: '0.75rem', fontWeight: 'bold',
                 border: '1px solid rgba(255,255,255,0.2)'
               }}>
-                {rolLabel.emoji} {rolLabel.label}
+                {rolLabel.icon} {rolLabel.label}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <nav className="app-sidebar__nav" aria-label="Navegación principal">
             {navItems.map(item => {
@@ -107,8 +109,20 @@ export const Layout = () => {
                   className={`app-sidebar__link ${isActive ? 'app-sidebar__link--active' : ''}`}
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => setSidebarOpen(false)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                 >
-                  {item.label}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </div>
+                  {item.count != null && item.count > 0 && (
+                    <span style={{
+                      background: 'var(--c3-danger)', color: 'white',
+                      padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold'
+                    }}>
+                      {item.count}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -120,15 +134,30 @@ export const Layout = () => {
               onClick={logout}
               className="btn--logout"
               aria-label="Cerrar sesión del panel C3"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              Cerrar Sesión
+              <LogOut size={18} /> Cerrar Sesión
             </button>
           </div>
         </aside>
 
         {/* Main Content */}
         <main id="main-content" className="app-main" role="main" tabIndex={-1}>
-          <Outlet />
+          <div key={location.pathname} className="page-transition-wrapper">
+            <style>{`
+              @keyframes pageFadeIn {
+                from { opacity: 0; transform: translateY(8px); }
+                to   { opacity: 1; transform: translateY(0); }
+              }
+              .page-transition-wrapper {
+                animation: pageFadeIn 0.25s ease-out both;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+              }
+            `}</style>
+            <Outlet />
+          </div>
         </main>
       </div>
     </>

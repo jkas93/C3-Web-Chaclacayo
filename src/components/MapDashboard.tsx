@@ -346,39 +346,45 @@ const MapDashboardInner = () => {
   return (
     <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* ── Barra de estadísticas ──────────────────────────── */}
+      {/* ── Barra de estadísticas (Dashboard Cards) ──────────────────────────── */}
       <div
         role="status"
         aria-live="polite"
         style={{
-          backgroundColor: 'var(--c3-primary, #0B2046)',
-          color: 'white',
-          padding: '0.8rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
+          backgroundColor: 'var(--c3-bg)',
+          padding: '16px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: '12px',
-          fontSize: '0.85rem',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-          zIndex: 10
+          zIndex: 10,
+          borderBottom: '1px solid var(--c3-border)'
         }}
       >
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <span aria-label={`${stats.pendientes} emergencias pendientes`}>🔴 Pendientes: <strong>{stats.pendientes}</strong></span>
-          <span aria-label={`${stats.despachadas} emergencias despachadas`}>🟡 Despachadas: <strong>{stats.despachadas}</strong></span>
-          <span aria-label={`${stats.resueltas} emergencias resueltas`}>🟢 Resueltas: <strong>{stats.resueltas}</strong></span>
-        </div>
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-          <span aria-label={`Unidades activas: ${stats.patrullerosActivos} de ${stats.patrullerosTotal}`}>
-            🚓 Unidades: <strong>{stats.patrullerosActivos}/{stats.patrullerosTotal}</strong>
-          </span>
-          <span aria-label={`Tiempo de respuesta promedio: ${stats.avgResponseMin} minutos`}>
-            ⏱️ T. Respuesta Prom: <strong>{stats.avgResponseMin}m</strong>
-          </span>
-          <span aria-label={`Total de incidentes hoy: ${stats.total}`}>
-            📊 Total: <strong>{stats.total}</strong>
-          </span>
-        </div>
+        {[
+          { label: 'Pendientes', count: stats.pendientes, color: '#E02828', icon: '🔴' },
+          { label: 'Despachadas', count: stats.despachadas, color: '#F6C23E', icon: '🟡' },
+          { label: 'Resueltas', count: stats.resueltas, color: '#43A047', icon: '🟢' },
+          { label: 'Unidades Activas', count: `${stats.patrullerosActivos}/${stats.patrullerosTotal}`, color: '#1E88E5', icon: '🚓' },
+          { label: 'Tiempo Prom.', count: `${stats.avgResponseMin}m`, color: '#8E24AA', icon: '⏱️' }
+        ].map(stat => (
+          <div key={stat.label} style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+            borderLeft: `4px solid ${stat.color}`
+          }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--c3-text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+              {stat.icon} {stat.label}
+            </span>
+            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--c3-text)' }}>
+              {stat.count}
+            </span>
+          </div>
+        ))}
       </div>
 
       {hasCoaccion && <AlertaCoaccion />}

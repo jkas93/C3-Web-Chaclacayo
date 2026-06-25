@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useUsuarios } from '../hooks/useUsuarios';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
@@ -17,9 +17,9 @@ export const UsuariosPage = () => {
       await resetFn({ vecinoDni: dni });
       setConfirmDni(null);
       alert(`✅ Dispositivo del vecino con DNI ${dni} reseteado correctamente. Podrá iniciar sesión desde un nuevo teléfono.`);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error reseteando dispositivo:', error);
-      alert(`❌ Error: ${error?.message || 'No se pudo resetear el dispositivo.'}`);
+      alert(`❌ Error: ${(error instanceof Error ? error.message : String(error)) || 'No se pudo resetear el dispositivo.'}`);
     } finally {
       setResettingDni(null);
     }

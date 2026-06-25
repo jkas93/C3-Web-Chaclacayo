@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import type { Emergencia } from '../types/Emergencia';
@@ -55,7 +55,7 @@ export const HistorialPage = () => {
       }
 
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Emergencia));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) } as Emergencia));
       setEmergencias(data);
     } catch (error) {
       console.error('Error fetching historial:', error);

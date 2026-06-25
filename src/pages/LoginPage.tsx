@@ -45,26 +45,59 @@ export const LoginPage = () => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'linear-gradient(135deg, var(--c3-primary, #0B2046) 0%, var(--c3-primary-light, #1a3a6a) 100%)'
+      background: 'linear-gradient(135deg, var(--c3-primary, #0B2046) 0%, var(--c3-primary-light, #1a3a6a) 100%)',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
+      {/* Decorative background elements */}
+      <div style={{
+        position: 'absolute', top: '-10%', left: '-5%', width: '40vw', height: '40vw',
+        background: 'radial-gradient(circle, rgba(100,181,246,0.15) 0%, rgba(0,0,0,0) 70%)',
+        borderRadius: '50%'
+      }} />
+      <div style={{
+        position: 'absolute', bottom: '-20%', right: '-10%', width: '60vw', height: '60vw',
+        background: 'radial-gradient(circle, rgba(100,181,246,0.1) 0%, rgba(0,0,0,0) 70%)',
+        borderRadius: '50%'
+      }} />
+
       <form
         onSubmit={handleSubmit}
         aria-label="Formulario de inicio de sesión"
         style={{
-          background: 'white',
+          background: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(10px)',
           padding: '48px',
-          borderRadius: 'var(--c3-radius-xl, 12px)',
-          boxShadow: 'var(--c3-shadow-lg)',
+          borderRadius: 'var(--c3-radius-xl, 16px)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
           width: '400px',
-          maxWidth: '90vw'
+          maxWidth: '90vw',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          animation: 'fadeSlideUp 0.6s ease-out',
+          position: 'relative',
+          zIndex: 1
         }}
       >
-        <h1 style={{ margin: '0 0 8px 0', color: 'var(--c3-primary, #0B2046)', fontSize: '1.8rem', textAlign: 'center' }}>
-          C3 Chaclacayo
-        </h1>
-        <p style={{ margin: '0 0 32px 0', color: 'var(--c3-text-secondary)', textAlign: 'center', fontSize: '0.9rem' }}>
-          Centro de Comando y Control — Acceso Restringido
-        </p>
+        <style>{`
+          @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <img 
+            src="/c3_logo.png" 
+            alt="C3 Chaclacayo Logo" 
+            style={{ width: '80px', height: 'auto', marginBottom: '16px' }}
+          />
+          <h1 style={{ margin: '0 0 8px 0', color: 'var(--c3-primary, #0B2046)', fontSize: '1.8rem' }}>
+            C3 Chaclacayo
+          </h1>
+          <p style={{ margin: 0, color: 'var(--c3-text-secondary)', fontSize: '0.9rem' }}>
+            Centro de Comando y Control
+          </p>
+        </div>
 
         {/* A4 FIX: Error with role=alert for screen readers */}
         {error && (
@@ -75,7 +108,8 @@ export const LoginPage = () => {
             borderRadius: 'var(--c3-radius-md)',
             marginBottom: '16px',
             fontSize: '0.85rem',
-            textAlign: 'center'
+            textAlign: 'center',
+            border: '1px solid var(--c3-danger)'
           }}>
             {error}
           </div>
@@ -96,10 +130,11 @@ export const LoginPage = () => {
             className="form-input"
             autoComplete="email"
             aria-required="true"
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.8)' }}
           />
         </div>
 
-        <div className="form-group" style={{ marginBottom: '24px' }}>
+        <div className="form-group" style={{ marginBottom: '32px' }}>
           <label htmlFor="password-input" className="form-label">
             Contraseña
           </label>
@@ -113,6 +148,7 @@ export const LoginPage = () => {
             className="form-input"
             autoComplete="current-password"
             aria-required="true"
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.8)' }}
           />
         </div>
 
@@ -127,11 +163,25 @@ export const LoginPage = () => {
             padding: '14px',
             fontSize: '1rem',
             letterSpacing: '1px',
-            opacity: loading ? 0.7 : 1
+            opacity: loading ? 0.7 : 1,
+            boxShadow: '0 4px 12px rgba(11, 32, 70, 0.3)',
+            transition: 'all 0.3s ease'
+          }}
+          onMouseOver={(e) => {
+            if (!loading) e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseOut={(e) => {
+            if (!loading) e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
           {loading ? 'VERIFICANDO...' : 'ACCEDER AL PANEL'}
         </button>
+        
+        <div style={{ textAlign: 'center', marginTop: '24px' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--c3-text-muted)', margin: 0 }}>
+            Municipalidad de Chaclacayo &copy; 2026
+          </p>
+        </div>
       </form>
     </div>
   );
