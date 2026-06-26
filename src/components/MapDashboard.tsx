@@ -128,20 +128,34 @@ const options: google.maps.MapOptions = {
 const ACTIVE_STATES = ['PENDIENTE', 'DESPACHADA', 'COACCION'] as const;
 const CENTER_POSITION = { lat: -11.9765, lng: -76.7725 };
 
-/** Wrapper personalizado para usar AdvancedMarkerElement en @react-google-maps/api */
-const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick }: {
+/** 
+ * Interpolación lineal de coordenadas entre posición anterior y nueva
+ * Esto elimina el efecto "teletransporte" cuando el GPS actualiza — igual que Uber
+ */
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Wrapper personalizado para usar AdvancedMarkerElement con interpolación suave */
+const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = true }: {
   position: google.maps.LatLngLiteral;
   iconData: { size: number; svgContent: string };
   zIndex?: number;
   onClick?: () => void;
+  animate?: boolean;
 }) => {
   const map = useGoogleMap();
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Para interpolación: posición actual y destino
+  const currentPosRef = useRef<google.maps.LatLngLiteral>(position);
+  const targetPosRef = useRef<google.maps.LatLngLiteral>(position);
+  const rafRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const ANIM_DURATION = 800; // ms — duración de la interpolación
 
   if (!containerRef.current) {
     containerRef.current = document.createElement('div');
-    // Shift up by 50% to align center of SVG with the coordinate (default anchor is bottom center)
     containerRef.current.style.transform = 'translate(0, 50%)';
     containerRef.current.style.cursor = onClick ? 'pointer' : 'default';
   }
@@ -156,15 +170,16 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick }: {
   // Create & Teardown Marker
   useEffect(() => {
     if (!map) return;
-    
+    currentPosRef.current = position;
+    targetPosRef.current = position;
     markerRef.current = new google.maps.marker.AdvancedMarkerElement({
       map,
       position,
       content: containerRef.current,
       zIndex
     });
-
     return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (markerRef.current) {
         markerRef.current.map = null;
         markerRef.current = null;
@@ -172,13 +187,50 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick }: {
     };
   }, [map]);
 
-  // Update Position & Z-Index
+  // Interpolación suave al cambiar posición
   useEffect(() => {
-    if (markerRef.current) {
+    if (!markerRef.current) return;
+    if (!animate) {
+      // Sin animación: actualizar directo (ej: emergencias que se mueven)
       markerRef.current.position = position;
-      if (zIndex !== undefined) markerRef.current.zIndex = zIndex;
+      currentPosRef.current = position;
+      return;
     }
-  }, [position.lat, position.lng, zIndex]);
+    // Nueva posición destino
+    const from = { ...currentPosRef.current };
+    targetPosRef.current = position;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    startTimeRef.current = null;
+
+    const step = (timestamp: number) => {
+      if (!startTimeRef.current) startTimeRef.current = timestamp;
+      const elapsed = timestamp - startTimeRef.current;
+      const t = Math.min(elapsed / ANIM_DURATION, 1);
+      // Ease-out cubic para desaceleración natural (igual que Uber)
+      const eased = 1 - Math.pow(1 - t, 3);
+
+      const interpolated = {
+        lat: lerp(from.lat, targetPosRef.current.lat, eased),
+        lng: lerp(from.lng, targetPosRef.current.lng, eased)
+      };
+
+      if (markerRef.current) {
+        markerRef.current.position = interpolated;
+        currentPosRef.current = interpolated;
+      }
+
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(step);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+  }, [position.lat, position.lng, animate]);
+
+  // Update Z-Index
+  useEffect(() => {
+    if (markerRef.current && zIndex !== undefined) markerRef.current.zIndex = zIndex;
+  }, [zIndex]);
 
   // Update Click Listener
   useEffect(() => {
