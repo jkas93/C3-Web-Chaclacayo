@@ -1,5 +1,5 @@
 import { useMemo, memo, useState, useCallback, useRef, useEffect } from 'react';
-import { useJsApiLoader, GoogleMap, MarkerF, DirectionsService, DirectionsRenderer } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, useGoogleMap } from '@react-google-maps/api';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
@@ -51,9 +51,8 @@ function getEmergenciaIcon(tipo: string, isSelected: boolean, isCoac: boolean) {
   }
 
   return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">${svgContent}</svg>`)}`,
-    scaledSize: new google.maps.Size(size, size),
-    anchor: new google.maps.Point(size / 2, size / 2),
+    size,
+    svgContent: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">${svgContent}</svg>`
   };
 }
 
@@ -107,13 +106,12 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
   }
 
   return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 52 52">${svgContent}</svg>`)}`,
-    scaledSize: new google.maps.Size(size, size),
-    anchor: new google.maps.Point(size / 2, size / 2),
+    size,
+    svgContent: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 52 52">${svgContent}</svg>`
   };
 }
 
-const libraries: "places"[] = ["places"];
+const libraries: ("places" | "marker")[] = ["places", "marker"];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
 const mapContainerStyle = {
@@ -124,10 +122,74 @@ const mapContainerStyle = {
 const options: google.maps.MapOptions = {
   disableDefaultUI: true,
   zoomControl: true,
+  mapId: "DEMO_MAP_ID"
 };
 
 const ACTIVE_STATES = ['PENDIENTE', 'DESPACHADA', 'COACCION'] as const;
 const CENTER_POSITION = { lat: -11.9765, lng: -76.7725 };
+
+/** Wrapper personalizado para usar AdvancedMarkerElement en @react-google-maps/api */
+const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick }: {
+  position: google.maps.LatLngLiteral;
+  iconData: { size: number; svgContent: string };
+  zIndex?: number;
+  onClick?: () => void;
+}) => {
+  const map = useGoogleMap();
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  if (!containerRef.current) {
+    containerRef.current = document.createElement('div');
+    // Shift up by 50% to align center of SVG with the coordinate (default anchor is bottom center)
+    containerRef.current.style.transform = 'translate(0, 50%)';
+    containerRef.current.style.cursor = onClick ? 'pointer' : 'default';
+  }
+
+  // Update SVG content
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.innerHTML = iconData.svgContent;
+    }
+  }, [iconData.svgContent]);
+
+  // Create & Teardown Marker
+  useEffect(() => {
+    if (!map) return;
+    
+    markerRef.current = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position,
+      content: containerRef.current,
+      zIndex
+    });
+
+    return () => {
+      if (markerRef.current) {
+        markerRef.current.map = null;
+        markerRef.current = null;
+      }
+    };
+  }, [map]);
+
+  // Update Position & Z-Index
+  useEffect(() => {
+    if (markerRef.current) {
+      markerRef.current.position = position;
+      if (zIndex !== undefined) markerRef.current.zIndex = zIndex;
+    }
+  }, [position.lat, position.lng, zIndex]);
+
+  // Update Click Listener
+  useEffect(() => {
+    if (markerRef.current && onClick) {
+      const listener = markerRef.current.addListener('click', onClick);
+      return () => listener.remove();
+    }
+  }, [onClick]);
+
+  return null;
+};
 
 const MapDashboardInner = () => {
   const { isLoaded, loadError } = useJsApiLoader({
@@ -468,12 +530,12 @@ const MapDashboardInner = () => {
           {emergenciasFiltradas.map((e) => {
             const isCoac = e.estado === EstadoEmergencia.COACCION;
             const isSelected = selectedEmergencia?.id === e.id;
-            const icon = getEmergenciaIcon(e.tipo, isSelected, isCoac);
+            const iconData = getEmergenciaIcon(e.tipo, isSelected, isCoac);
             return (
-              <MarkerF
+              <CustomAdvancedMarker
                 key={e.id}
                 position={{ lat: e.latitudActual ?? e.latitud, lng: e.longitudActual ?? e.longitud }}
-                icon={icon}
+                iconData={iconData}
                 zIndex={isSelected ? 1000 : 100}
                 onClick={() => handleSelectEmergencia(e)}
               />
@@ -484,12 +546,12 @@ const MapDashboardInner = () => {
           {patrullerosFiltrados.map((p) => {
             const isActive = p.estado === EstadoPatrullero.EN_SERVICIO;
             const isAssigned = selectedEmergencia?.patrullaAsignadaId === p.uid;
-            const icon = getUnidadIcon(p.tipoServicio, isActive, isAssigned);
+            const iconData = getUnidadIcon(p.tipoServicio, isActive, isAssigned);
             return (
-              <MarkerF
+              <CustomAdvancedMarker
                 key={p.uid}
                 position={{ lat: p.latitud, lng: p.longitud }}
-                icon={icon}
+                iconData={iconData}
                 zIndex={isAssigned ? 999 : 50}
               />
             );
