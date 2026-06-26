@@ -143,7 +143,8 @@ exports.asignarUnidadCercana = onDocumentCreated('emergencias/{emergenciaId}', a
             transaction.update(unidadRef, { estado: 'EN_SERVICIO' });
             transaction.update(emergRef, {
                 patrullaAsignadaId: closest.id,
-                estado: isCoaccion ? 'COACCION' : 'DESPACHADA'
+                estado: isCoaccion ? 'COACCION' : 'DESPACHADA',
+                horaAsignacionMs: Date.now()
             });
         });
 

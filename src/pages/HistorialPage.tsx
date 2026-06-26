@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import type { Emergencia } from '../types/Emergencia';
@@ -76,6 +76,35 @@ export const HistorialPage = () => {
     return new Date(ms).toLocaleString('es-PE', { timeZone: 'America/Lima' });
   };
 
+  // ── Analytics Nivel 3 ──
+  const calculateAnalytics = () => {
+    if (emergencias.length === 0) return null;
+    
+    let totalDespachoMs = 0;
+    let countDespacho = 0;
+    
+    let canceladas = 0;
+
+    emergencias.forEach(e => {
+      if (e.estado === 'CANCELADA') canceladas++;
+      
+      if (e.horaAsignacionMs && e.timestampMs) {
+        totalDespachoMs += (e.horaAsignacionMs - e.timestampMs);
+        countDespacho++;
+      }
+    });
+
+    const avgDespachoSegundos = countDespacho > 0 ? Math.round(totalDespachoMs / countDespacho / 1000) : 0;
+    
+    return {
+      total: emergencias.length,
+      canceladas,
+      avgDespachoSegundos
+    };
+  };
+
+  const stats = calculateAnalytics();
+
   const getEstadoBadgeClass = (estado: string) => {
     switch (estado) {
       case 'PENDIENTE': return 'badge badge--pendiente';
@@ -120,6 +149,30 @@ export const HistorialPage = () => {
             {loading ? 'Buscando...' : 'Buscar'}
           </button>
         </form>
+
+        {stats && (
+          <div style={{
+            display: 'flex', gap: '1rem', width: '100%', marginTop: '1rem', 
+            padding: '1rem', backgroundColor: 'var(--c3-bg-secondary)', borderRadius: '8px'
+          }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--c3-text-muted)', margin: 0 }}>Total Emergencias</p>
+              <h3 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--c3-primary)' }}>{stats.total}</h3>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--c3-text-muted)', margin: 0 }}>Tasa de Cancelación</p>
+              <h3 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--c3-warning)' }}>
+                {Math.round((stats.canceladas / stats.total) * 100)}%
+              </h3>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--c3-text-muted)', margin: 0 }}>SLA Promedio (Despacho)</p>
+              <h3 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--c3-success)' }}>
+                {stats.avgDespachoSegundos > 0 ? `${stats.avgDespachoSegundos}s` : '—'}
+              </h3>
+            </div>
+          </div>
+        )}
       </header>
       
       <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }} role="region" aria-labelledby="historial-heading">
