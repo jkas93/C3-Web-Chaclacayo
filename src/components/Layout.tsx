@@ -70,26 +70,26 @@ const SidebarContent = ({
 
       {/* Header */}
       <div className="app-sidebar__header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <img src="/c3_logo.png" alt="C3 Logo" style={{ width: '40px', height: '40px' }} />
+        <img src="/c3_logo.png" alt="C3 Logo" style={{ width: '32px', height: '32px', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }} />
         <div>
-          <h2 className="app-sidebar__title">C3 Chaclacayo</h2>
-          <span className="app-sidebar__subtitle">Centro de Comando</span>
+          <h2 className="app-sidebar__title" style={{ color: '#111827', fontSize: '1.125rem', fontWeight: 600 }}>C3 Chaclacayo</h2>
+          <span className="app-sidebar__subtitle" style={{ color: '#6b7280', fontSize: '0.75rem' }}>Centro de Comando</span>
         </div>
       </div>
 
       {/* Badge de rol */}
       {rolLabel && (
-        <div style={{ padding: '0 var(--c3-space-lg)' }}>
+        <div style={{ padding: '0 1rem' }}>
           <div style={{
             marginTop: '8px',
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.9)',
-            padding: '4px 12px', borderRadius: '16px',
-            fontSize: '0.75rem', fontWeight: 'bold',
-            border: '1px solid rgba(255,255,255,0.2)'
+            background: '#f3f4f6',
+            color: '#374151',
+            padding: '4px 12px', borderRadius: '9999px',
+            fontSize: '0.75rem', fontWeight: 500,
+            border: '1px solid #e5e7eb'
           }}>
-            <Shield size={12} />
+            <Shield size={12} style={{ color: '#6b7280' }} />
             {rolLabel.label}
           </div>
         </div>
@@ -131,16 +131,26 @@ const SidebarContent = ({
       <div className="app-sidebar__footer">
         <C3Menu
           trigger={
-            <div className="c3-user-menu-trigger" role="button" tabIndex={0} aria-label="Menú de usuario">
-              <User size={16} />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div className="c3-user-menu-trigger" role="button" tabIndex={0} aria-label="Menú de usuario" style={{
+              display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
+              padding: '8px 12px', borderRadius: '6px', cursor: 'pointer',
+              color: '#374151', fontWeight: 500, fontSize: '0.875rem',
+              transition: 'background-color 150ms ease'
+            }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+                <User size={16} />
+              </div>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
                 {rolLabel?.label ?? 'Usuario'}
               </span>
-              <ChevronDown size={14} />
+              <ChevronDown size={16} style={{ color: '#9ca3af' }} />
             </div>
           }
           items={userMenuItems}
-          anchor="top end"
+          anchor="top start"
         />
       </div>
     </>
@@ -154,19 +164,6 @@ export const Layout = () => {
   const { emergencias } = useEmergencias(rol);
 
   const pendientesCount = emergencias.filter(e => e.estado === 'PENDIENTE').length;
-
-  // Color theming por rol — se aplica vía CSS variables
-  const rolColors: Record<string, { primary: string; light: string }> = {
-    ADMIN:    { primary: '#5C35C4', light: '#7b4fdb' },
-    POLICIA:  { primary: '#1565C0', light: '#1e88e5' },
-    SALUD:    { primary: '#2E7D32', light: '#43a047' },
-    BOMBEROS: { primary: '#B71C1C', light: '#d32f2f' },
-  };
-  const roleKey = isAdmin ? 'ADMIN' : (rol ?? '');
-  const roleColors = rolColors[roleKey];
-  const cssVars = roleColors
-    ? { '--c3-primary': roleColors.primary, '--c3-primary-light': roleColors.light } as React.CSSProperties
-    : {};
 
   const rolLabel = isAdmin
     ? { label: 'Administrador' }
@@ -200,7 +197,7 @@ export const Layout = () => {
   };
 
   return (
-    <div style={cssVars}>
+    <div style={{ backgroundColor: '#f9fafb' }}>
       <EmergencyAlertOverlay />
       <div className="app-layout">
         <a href="#main-content" className="skip-link">
