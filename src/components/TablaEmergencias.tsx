@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +6,8 @@ import { doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { EstadoEmergencia, EstadoPatrullero, SERVICIO_CONFIG } from '../types/enums';
 import type { TipoEmergencia } from '../types/enums';
+import { C3Tabs, C3Listbox, C3Combobox } from './ui';
+import type { C3TabItem, C3ListboxOption } from './ui';
 
 // M9: Cambiar estado de emergencia
 const cambiarEstado = async (emergenciaId: string, nuevoEstado: string) => {
@@ -16,7 +18,7 @@ const cambiarEstado = async (emergenciaId: string, nuevoEstado: string) => {
   }
 };
 
-// Asignación manual de unidad — filtra por tipo de servicio compatible
+// Asignación manual de unidad
 const asignarManualmente = async (emergenciaId: string, unidadId: string) => {
   try {
     const batch = writeBatch(db);
@@ -76,26 +78,29 @@ const TipoBadge = ({ tipo }: { tipo: string }) => {
   );
 };
 
-// Filtros de estado
-const FILTROS = [
-  { key: 'TODAS',     label: 'Todas' },
-  { key: 'PENDIENTE', label: '🔴 Pendientes' },
-  { key: 'COACCION',  label: '⚠️ Coacción' },
-  { key: 'DESPACHADA',label: '🟡 Despachadas' },
-  { key: 'EN_SITIO',  label: '🔵 En Sitio' },
-  { key: 'RESUELTA',  label: '🟢 Resueltas' },
-  { key: 'CANCELADA', label: '❌ Canceladas' },
-];
+// Definición de filtros de estado como tabs
+const FILTROS_KEYS = ['TODAS', 'PENDIENTE', 'COACCION', 'DESPACHADA', 'EN_SITIO', 'RESUELTA', 'CANCELADA'] as const;
+type FiltroKey = typeof FILTROS_KEYS[number];
 
-// Helpers for sorting and relative time
+const FILTRO_LABELS: Record<FiltroKey, string> = {
+  TODAS:     'Todas',
+  PENDIENTE: 'Pendientes',
+  COACCION:  'Coacción',
+  DESPACHADA: 'Despachadas',
+  EN_SITIO:  'En Sitio',
+  RESUELTA:  'Resueltas',
+  CANCELADA: 'Canceladas',
+};
+
+// Helpers
 const getPrioridadEstado = (estado: string) => {
   switch (estado) {
-    case 'COACCION': return 1;
-    case 'PENDIENTE': return 2;
+    case 'COACCION':   return 1;
+    case 'PENDIENTE':  return 2;
     case 'DESPACHADA': return 3;
-    case 'EN_SITIO': return 4;
-    case 'RESUELTA': return 5;
-    case 'CANCELADA': return 6;
+    case 'EN_SITIO':   return 4;
+    case 'RESUELTA':   return 5;
+    case 'CANCELADA':  return 6;
     default: return 99;
   }
 };
@@ -116,9 +121,10 @@ export const TablaEmergencias = () => {
   const { emergencias, loading } = useEmergencias(rol);
   const { patrulleros } = usePatrulleros(rol);
 
-  const [filtroActivo, setFiltroActivo] = useState('TODAS');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [filtroIndex, setFiltroIndex] = useState(0);
+  const [searchValue, setSearchValue] = useState('');
+
+  const filtroActivo: FiltroKey = FILTROS_KEYS[filtroIndex];
 
   // Mapa de unidades para resolución de nombres
   const unidadMap = useMemo(() => {
@@ -129,33 +135,56 @@ export const TablaEmergencias = () => {
     return map;
   }, [patrulleros]);
 
+  // Opciones del combobox de búsqueda: vecinos únicos de las emergencias
+  const searchOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string; subLabel?: string }[] = [];
+    emergencias.forEach(e => {
+      if (e.vecinoNombre && !seen.has(e.vecinoId ?? e.vecinoNombre)) {
+        seen.add(e.vecinoId ?? e.vecinoNombre);
+        opts.push({
+          value: e.vecinoId ?? e.vecinoNombre,
+          label: e.vecinoNombre,
+          subLabel: e.vecinoDni ?? undefined,
+        });
+      }
+    });
+    return opts;
+  }, [emergencias]);
+
   // Aplicar filtro, búsqueda y ordenamiento
   const emergenciasFiltradas = useMemo(() => {
     let result = emergencias;
-    
-    // Filtro por estado
+
     if (filtroActivo !== 'TODAS') {
       result = result.filter(e => e.estado === filtroActivo);
     }
-    
-    // Búsqueda por nombre o DNI o ID
-    if (searchTerm.trim() !== '') {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(e => 
+
+    if (searchValue.trim() !== '') {
+      const term = searchValue.toLowerCase();
+      result = result.filter(e =>
         (e.vecinoNombre && e.vecinoNombre.toLowerCase().includes(term)) ||
         (e.vecinoDni && e.vecinoDni.includes(term)) ||
         e.id.toLowerCase().includes(term)
       );
     }
-    
-    // Ordenar: primero por prioridad de estado, luego por más reciente
+
     return result.sort((a, b) => {
       const pA = getPrioridadEstado(a.estado);
       const pB = getPrioridadEstado(b.estado);
       if (pA !== pB) return pA - pB;
       return b.timestampMs - a.timestampMs;
     });
-  }, [emergencias, filtroActivo, searchTerm]);
+  }, [emergencias, filtroActivo, searchValue]);
+
+  // Construir tabs dinámicos con conteo
+  const tabs: C3TabItem[] = FILTROS_KEYS.map(key => ({
+    key,
+    label: FILTRO_LABELS[key],
+    count: key === 'TODAS'
+      ? emergencias.length
+      : emergencias.filter(e => e.estado === key).length,
+  }));
 
   if (loading) return (
     <div style={{ padding: '20px' }}>
@@ -187,54 +216,44 @@ export const TablaEmergencias = () => {
   };
 
   return (
-    <div style={{ overflowX: 'auto', padding: '16px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }} role="region" aria-label="Tabla de emergencias">
+    <div
+      style={{ overflowX: 'auto', padding: '16px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+      role="region"
+      aria-label="Tabla de emergencias"
+    >
       <style>{`
         @keyframes fadeInRow {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animated-row {
-          animation: fadeInRow 0.3s ease-out forwards;
-        }
+        .animated-row { animation: fadeInRow 0.3s ease-out forwards; }
       `}</style>
-      
-      {/* Barra de filtros y búsqueda */}
+
+      {/* Barra de filtros (C3Tabs) + búsqueda (C3Combobox) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {FILTROS.map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFiltroActivo(f.key)}
-              style={{
-                padding: '6px 14px', borderRadius: '20px',
-                border: filtroActivo === f.key ? '2px solid var(--c3-primary, #0B2046)' : '1px solid #e0e0e0',
-                background: filtroActivo === f.key ? 'var(--c3-primary, #0B2046)' : 'white',
-                color: filtroActivo === f.key ? 'white' : '#555',
-                cursor: 'pointer', fontSize: '0.8rem',
-                fontWeight: filtroActivo === f.key ? 'bold' : 'normal',
-                transition: 'all 0.2s',
-              }}
-            >
-              {f.label} {f.key !== 'TODAS'
-                ? `(${emergencias.filter(e => e.estado === f.key).length})`
-                : `(${emergencias.length})`}
-            </button>
-          ))}
-        </div>
-        
-        <div>
-          <input 
-            type="search" 
-            placeholder="Buscar vecino, DNI o ID..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '20px',
-              border: '1px solid #ccc',
-              fontSize: '0.85rem',
-              width: '250px',
-              outline: 'none'
+
+        {/* Filtros de estado → C3Tabs en filterMode */}
+        <C3Tabs
+          tabs={tabs}
+          selectedIndex={filtroIndex}
+          onChange={setFiltroIndex}
+          filterMode
+        />
+
+        {/* Búsqueda → C3Combobox */}
+        <div style={{ width: '260px' }}>
+          <C3Combobox
+            value={searchValue}
+            onChange={setSearchValue}
+            options={searchOptions}
+            placeholder="Buscar vecino, DNI o ID..."
+            filterFn={(query, opt) =>
+              opt.label.toLowerCase().includes(query.toLowerCase()) ||
+              (opt.subLabel?.toLowerCase().includes(query.toLowerCase()) ?? false)
+            }
+            displayValue={val => {
+              const opt = searchOptions.find(o => o.value === val);
+              return opt?.label ?? val;
             }}
           />
         </div>
@@ -271,8 +290,15 @@ export const TablaEmergencias = () => {
             const unidadesCompatibles = patrulleros.filter(
               p => p.estado === EstadoPatrullero.DISPONIBLE && p.tipoServicio === e.tipo
             );
-
             const tipoServicioLabel = SERVICIO_CONFIG[e.tipo as TipoEmergencia];
+
+            // Opciones del Listbox de asignación de unidad
+            const listboxOptions: C3ListboxOption[] = unidadesCompatibles.map(p => ({
+              value: p.uid,
+              label: p.nombre,
+              description: p.codigo,
+              icon: tipoServicioLabel?.emoji,
+            }));
 
             return (
               <tr
@@ -312,30 +338,24 @@ export const TablaEmergencias = () => {
 
                 <td style={{ fontSize: '0.85rem', fontWeight: 500 }}>{vecinoDisplay}</td>
 
+                {/* Asignación de unidad → C3Listbox */}
                 <td style={{ fontSize: '0.8rem', color: '#555' }}>
-                  {e.estado === 'PENDIENTE' && !e.patrullaAsignadaId && assigningId === e.id ? (
-                    <select
-                      onChange={(ev) => {
-                        if (ev.target.value) {
-                          asignarManualmente(e.id, ev.target.value);
-                          setAssigningId(null);
+                  {e.estado === 'PENDIENTE' && !e.patrullaAsignadaId ? (
+                    <div style={{ minWidth: '160px' }}>
+                      <C3Listbox
+                        value=""
+                        onChange={(uid) => {
+                          if (uid) asignarManualmente(e.id, uid);
+                        }}
+                        options={listboxOptions}
+                        placeholder={
+                          unidadesCompatibles.length === 0
+                            ? `Sin unidades de ${tipoServicioLabel?.label ?? e.tipo}`
+                            : 'Asignar unidad...'
                         }
-                      }}
-                      style={{ fontSize: '0.75rem', padding: '4px', maxWidth: '150px', borderRadius: '4px' }}
-                      autoFocus
-                      onBlur={() => setAssigningId(null)}
-                    >
-                      <option value="">
-                        {unidadesCompatibles.length === 0
-                          ? `Sin unidades de ${tipoServicioLabel?.label ?? e.tipo}`
-                          : 'Seleccionar...'}
-                      </option>
-                      {unidadesCompatibles.map(p => (
-                        <option key={p.uid} value={p.uid}>
-                          {tipoServicioLabel?.emoji} {p.nombre} ({p.codigo})
-                        </option>
-                      ))}
-                    </select>
+                        disabled={unidadesCompatibles.length === 0}
+                      />
+                    </div>
                   ) : unidadDisplay}
                 </td>
 
@@ -353,7 +373,7 @@ export const TablaEmergencias = () => {
                   {e.audioUrl ? (
                     <a href={e.audioUrl} target="_blank" rel="noreferrer"
                        style={{ color: '#0288D1', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}
-                       aria-label={`Escuchar audio`}>
+                       aria-label="Escuchar audio">
                        ▶ Escuchar
                     </a>
                   ) : <span aria-label="Sin audio disponible" style={{ color: '#ccc' }}>—</span>}
@@ -361,24 +381,6 @@ export const TablaEmergencias = () => {
 
                 <td>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {e.estado === 'PENDIENTE' && !e.patrullaAsignadaId && (
-                      <button
-                        onClick={() => setAssigningId(e.id)}
-                        disabled={unidadesCompatibles.length === 0}
-                        title={unidadesCompatibles.length === 0
-                          ? `No hay unidades disponibles`
-                          : 'Asignar unidad manualmente'}
-                        style={{
-                          padding: '4px 10px',
-                          background: unidadesCompatibles.length > 0 ? '#1976d2' : '#ccc',
-                          color: 'white', border: 'none',
-                          borderRadius: '6px', cursor: unidadesCompatibles.length > 0 ? 'pointer' : 'not-allowed',
-                          fontSize: '0.7rem', fontWeight: 600
-                        }}
-                      >
-                        Asignar
-                      </button>
-                    )}
                     {nextAction ? (
                       <button
                         onClick={() => cambiarEstado(e.id, nextAction.nextEstado)}
@@ -398,14 +400,14 @@ export const TablaEmergencias = () => {
                     ) : e.estado === 'CANCELADA' ? (
                       <span style={{ color: '#9E9E9E', fontSize: '0.9rem' }}>❌</span>
                     ) : null}
-                    
+
                     {(e.estado === 'PENDIENTE' || e.estado === 'DESPACHADA') && (
                       <button
                         onClick={() => cancelarEmergencia(e.id, e.patrullaAsignadaId)}
                         style={{
                           padding: '4px 10px', background: '#f5f5f5', color: '#555',
-                          border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '0.7rem',
-                          fontWeight: 500
+                          border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer',
+                          fontSize: '0.7rem', fontWeight: 500
                         }}
                       >
                         Cancelar
@@ -420,7 +422,7 @@ export const TablaEmergencias = () => {
             <tr>
               <td colSpan={9} style={{ padding: '60px', textAlign: 'center', color: '#999' }}>
                 <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📭</div>
-                {filtroActivo === 'TODAS' && searchTerm === ''
+                {filtroActivo === 'TODAS' && searchValue === ''
                   ? 'Sin emergencias registradas.'
                   : 'No se encontraron emergencias con los filtros actuales.'}
               </td>
@@ -431,4 +433,3 @@ export const TablaEmergencias = () => {
     </div>
   );
 };
-
