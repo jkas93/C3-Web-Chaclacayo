@@ -1,5 +1,5 @@
 import { useMemo, memo, useState, useCallback, useRef, useEffect } from 'react';
-import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, useGoogleMap, DrawingManager, Polygon } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, useGoogleMap, Polygon } from '@react-google-maps/api';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
@@ -241,6 +241,44 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = t
       return () => listener.remove();
     }
   }, [onClick]);
+
+  return null;
+};
+
+const NativeDrawingManager = ({ onPolygonComplete, isDrawingMode }: { onPolygonComplete: (poly: google.maps.Polygon) => void, isDrawingMode: boolean }) => {
+  const map = useGoogleMap();
+  const managerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
+
+  useEffect(() => {
+    if (!map || !window.google?.maps?.drawing) return;
+
+    if (!managerRef.current) {
+      managerRef.current = new window.google.maps.drawing.DrawingManager({
+        drawingControl: true,
+        drawingControlOptions: {
+          position: window.google.maps.ControlPosition.TOP_CENTER,
+          drawingModes: [window.google.maps.drawing.OverlayType.POLYGON]
+        },
+        polygonOptions: {
+          fillColor: '#FF9800',
+          fillOpacity: 0.3,
+          strokeWeight: 2,
+          clickable: false,
+          editable: true,
+          zIndex: 1
+        }
+      });
+      window.google.maps.event.addListener(managerRef.current, 'polygoncomplete', onPolygonComplete);
+    }
+
+    if (isDrawingMode) {
+      managerRef.current.setMap(map);
+      // Auto-activar el modo dibujo al abrir
+      managerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
+    } else {
+      managerRef.current.setMap(null);
+    }
+  }, [map, isDrawingMode, onPolygonComplete]);
 
   return null;
 };
@@ -713,27 +751,11 @@ const MapDashboardInner = () => {
             />
           ))}
 
-          {/* Herramienta de Dibujo */}
-          {isDrawingMode && (
-            <DrawingManager
-              onPolygonComplete={onPolygonComplete}
-              options={{
-                drawingControl: true,
-                drawingControlOptions: {
-                  position: 2, // google.maps.ControlPosition.TOP_CENTER
-                  drawingModes: ['polygon' as any]
-                },
-                polygonOptions: {
-                  fillColor: '#FF9800',
-                  fillOpacity: 0.3,
-                  strokeWeight: 2,
-                  clickable: false,
-                  editable: true,
-                  zIndex: 1
-                }
-              }}
-            />
-          )}
+          {/* Herramienta de Dibujo Nativa */}
+          <NativeDrawingManager
+            onPolygonComplete={onPolygonComplete}
+            isDrawingMode={isDrawingMode}
+          />
         </GoogleMap>
 
         {/* Botón Dibujar Cuadrante */}
