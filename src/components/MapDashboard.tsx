@@ -720,8 +720,8 @@ const MapDashboardInner = () => {
               options={{
                 drawingControl: true,
                 drawingControlOptions: {
-                  position: window.google?.maps?.ControlPosition?.TOP_CENTER,
-                  drawingModes: [window.google?.maps?.drawing?.OverlayType?.POLYGON]
+                  position: 2, // google.maps.ControlPosition.TOP_CENTER
+                  drawingModes: ['polygon' as any]
                 },
                 polygonOptions: {
                   fillColor: '#FF9800',
