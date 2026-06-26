@@ -245,44 +245,6 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = t
   return null;
 };
 
-const NativeDrawingManager = ({ onPolygonComplete, isDrawingMode }: { onPolygonComplete: (poly: google.maps.Polygon) => void, isDrawingMode: boolean }) => {
-  const map = useGoogleMap();
-  const managerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
-
-  useEffect(() => {
-    if (!map || !window.google?.maps?.drawing) return;
-
-    if (!managerRef.current) {
-      managerRef.current = new window.google.maps.drawing.DrawingManager({
-        drawingControl: true,
-        drawingControlOptions: {
-          position: window.google.maps.ControlPosition.TOP_CENTER,
-          drawingModes: [window.google.maps.drawing.OverlayType.POLYGON]
-        },
-        polygonOptions: {
-          fillColor: '#FF9800',
-          fillOpacity: 0.3,
-          strokeWeight: 2,
-          clickable: false,
-          editable: true,
-          zIndex: 1
-        }
-      });
-      window.google.maps.event.addListener(managerRef.current, 'polygoncomplete', onPolygonComplete);
-    }
-
-    if (isDrawingMode) {
-      managerRef.current.setMap(map);
-      // Auto-activar el modo dibujo al abrir
-      managerRef.current.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
-    } else {
-      managerRef.current.setMap(null);
-    }
-  }, [map, isDrawingMode, onPolygonComplete]);
-
-  return null;
-};
-
 const MapDashboardInner = () => {
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
@@ -300,9 +262,9 @@ const MapDashboardInner = () => {
   const [shouldFetchDirections, setShouldFetchDirections] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  // ── Cuadrantes y Geofencing ──
   const [cuadrantes, setCuadrantes] = useState<any[]>([]);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [draftPolygon, setDraftPolygon] = useState<{lat: number, lng: number}[]>([]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'cuadrantes'), snap => {
@@ -311,19 +273,28 @@ const MapDashboardInner = () => {
     return () => unsub();
   }, []);
 
-  const onPolygonComplete = useCallback((polygon: google.maps.Polygon) => {
-    const path = polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
-    polygon.setMap(null); 
-    
+  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (!isDrawingMode || !e.latLng) return;
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    setDraftPolygon(prev => [...prev, { lat, lng }]);
+  }, [isDrawingMode]);
+
+  const onPolygonComplete = useCallback(() => {
+    if (draftPolygon.length < 3) {
+      alert("Un cuadrante necesita al menos 3 puntos.");
+      return;
+    }
     const name = window.prompt('Ingrese el nombre del cuadrante (ej. Cuadrante Alfa):');
     if (name) {
       addDoc(collection(db, 'cuadrantes'), {
         nombre: name,
-        path: path
+        path: draftPolygon
       }).catch(err => console.error("Error al guardar cuadrante", err));
     }
     setIsDrawingMode(false);
-  }, []);
+    setDraftPolygon([]);
+  }, [draftPolygon]);
 
   const emergenciasFiltradas = useMemo(() =>
     emergencias.filter(e => e.latitud != null && e.longitud != null), [emergencias]);
@@ -677,9 +648,10 @@ const MapDashboardInner = () => {
       <div style={{ flex: 1, position: 'relative' }} role="application" aria-label="Mapa táctico de Chaclacayo">
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
+          options={{...options, draggableCursor: isDrawingMode ? 'crosshair' : ''}}
           center={CENTER_POSITION}
-          zoom={15}
-          options={options}
+          zoom={14}
+          onClick={handleMapClick}
           onLoad={onMapLoad}
         >
           {/* Direcciones — Ruta del patrullero a la emergencia */}
@@ -751,16 +723,49 @@ const MapDashboardInner = () => {
             />
           ))}
 
-          {/* Herramienta de Dibujo Nativa */}
-          <NativeDrawingManager
-            onPolygonComplete={onPolygonComplete}
-            isDrawingMode={isDrawingMode}
-          />
+          {/* Cuadrante en Dibujo (Draft) */}
+          {isDrawingMode && draftPolygon.length > 0 && (
+            <Polygon
+              path={draftPolygon}
+              options={{
+                fillColor: '#FF9800',
+                fillOpacity: 0.3,
+                strokeColor: '#FF9800',
+                strokeWeight: 2,
+                clickable: false
+              }}
+            />
+          )}
         </GoogleMap>
 
-        {/* Botón Dibujar Cuadrante */}
+        {/* Botones de Dibujo */}
+        {isDrawingMode && draftPolygon.length >= 3 && (
+          <button
+            onClick={onPolygonComplete}
+            style={{
+              position: 'absolute',
+              bottom: '64px',
+              right: '16px',
+              padding: '12px 20px',
+              backgroundColor: '#008CBA',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+              cursor: 'pointer',
+              zIndex: 10
+            }}
+          >
+            ✓ Guardar Cuadrante
+          </button>
+        )}
+        
         <button
-          onClick={() => setIsDrawingMode(!isDrawingMode)}
+          onClick={() => {
+            setIsDrawingMode(!isDrawingMode);
+            setDraftPolygon([]);
+          }}
           style={{
             position: 'absolute',
             bottom: '16px',
