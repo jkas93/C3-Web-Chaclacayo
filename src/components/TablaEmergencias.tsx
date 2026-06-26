@@ -25,6 +25,7 @@ const asignarManualmente = async (emergenciaId: string, unidadId: string) => {
     batch.update(doc(db, 'emergencias', emergenciaId), {
       patrullaAsignadaId: unidadId,
       estado: EstadoEmergencia.DESPACHADA,
+      horaAsignacionMs: Date.now()
     });
     batch.update(doc(db, 'patrulleros', unidadId), {
       estado: EstadoPatrullero.EN_SERVICIO,
@@ -38,8 +39,12 @@ const asignarManualmente = async (emergenciaId: string, unidadId: string) => {
 // P4: Cancelar emergencia y liberar unidad
 const cancelarEmergencia = async (emergenciaId: string, unidadId: string | null) => {
   try {
+    const esFalsaAlarma = window.confirm("¿Esta emergencia fue una FALSA ALARMA? (Se afectará el score de confiabilidad del vecino)");
     const batch = writeBatch(db);
-    batch.update(doc(db, 'emergencias', emergenciaId), { estado: EstadoEmergencia.CANCELADA });
+    batch.update(doc(db, 'emergencias', emergenciaId), { 
+      estado: EstadoEmergencia.CANCELADA,
+      esFalsaAlarma: esFalsaAlarma
+    });
     if (unidadId) {
       batch.update(doc(db, 'patrulleros', unidadId), { estado: EstadoPatrullero.DISPONIBLE });
     }

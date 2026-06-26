@@ -1,8 +1,10 @@
 import { useMemo, memo, useState, useCallback, useRef, useEffect } from 'react';
-import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, useGoogleMap } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, useGoogleMap, DrawingManager, Polygon } from '@react-google-maps/api';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../services/firebase';
+import { doc, updateDoc, addDoc, collection, onSnapshot } from 'firebase/firestore';
 import { EstadoEmergencia, EstadoPatrullero } from '../types/enums';
 import { AlertaCoaccion } from './AlertaCoaccion';
 import type { Emergencia } from '../types/Emergencia';
@@ -111,7 +113,7 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
   };
 }
 
-const libraries: ("places" | "marker")[] = ["places", "marker"];
+const libraries: ("places" | "marker" | "drawing" | "geometry")[] = ["places", "marker", "drawing", "geometry"];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
 const mapContainerStyle = {
@@ -260,6 +262,61 @@ const MapDashboardInner = () => {
   const [shouldFetchDirections, setShouldFetchDirections] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
+  // ── Cuadrantes y Geofencing ──
+  const [cuadrantes, setCuadrantes] = useState<any[]>([]);
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'cuadrantes'), snap => {
+      setCuadrantes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  const onPolygonComplete = useCallback((polygon: google.maps.Polygon) => {
+    const path = polygon.getPath().getArray().map(p => ({ lat: p.lat(), lng: p.lng() }));
+    polygon.setMap(null); 
+    
+    const name = window.prompt('Ingrese el nombre del cuadrante (ej. Cuadrante Alfa):');
+    if (name) {
+      addDoc(collection(db, 'cuadrantes'), {
+        nombre: name,
+        path: path
+      }).catch(err => console.error("Error al guardar cuadrante", err));
+    }
+    setIsDrawingMode(false);
+  }, []);
+
+  const emergenciasFiltradas = useMemo(() =>
+    emergencias.filter(e => e.latitud != null && e.longitud != null), [emergencias]);
+
+  const patrullerosFiltrados = useMemo(() =>
+    patrulleros.filter(p => p.latitud != null && p.longitud != null), [patrulleros]);
+
+  // Alertas de Salida de Cuadrante
+  const alertasGeocerca = useMemo(() => {
+    if (!window.google?.maps?.geometry) return [];
+    
+    const alertas: { patrullaId: string, nombre: string, cuadranteNombre: string }[] = [];
+    
+    patrullerosFiltrados.forEach(p => {
+      if (p.cuadranteAsignadoId && p.estado === EstadoPatrullero.EN_SERVICIO) {
+        const cuadrante = cuadrantes.find(c => c.id === p.cuadranteAsignadoId);
+        if (cuadrante) {
+          const latLng = new window.google.maps.LatLng(p.latitud, p.longitud);
+          const polygon = new window.google.maps.Polygon({ paths: cuadrante.path });
+          const isInside = window.google.maps.geometry.poly.containsLocation(latLng, polygon);
+          
+          if (!isInside) {
+            alertas.push({ patrullaId: p.uid, nombre: p.nombre, cuadranteNombre: cuadrante.nombre });
+          }
+        }
+      }
+    });
+    
+    return alertas;
+  }, [patrullerosFiltrados, cuadrantes]);
+
   // Tick cada 30s para actualizar tiempos sin Date.now() impuro en render
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30_000);
@@ -325,9 +382,10 @@ const MapDashboardInner = () => {
   }, [selectedEmergencia?.patrullaAsignadaId]);
 
   const stats = useMemo(() => {
-    const emergenciasConPatrulla = emergencias.filter(e => e.patrullaAsignadaId && e.estado !== 'PENDIENTE');
+    // ⏱️ SLA Real: Basado en la marca de tiempo exacta de llegada de la patrulla
     const resueltas = emergencias.filter(e => e.estado === 'RESUELTA');
-    const tRespuestas = emergenciasConPatrulla.map(e => now - e.timestampMs).filter(t => t > 0);
+    const emergenciasSLA = emergencias.filter(e => e.horaLlegadaMs && e.timestampMs);
+    const tRespuestas = emergenciasSLA.map(e => e.horaLlegadaMs! - e.timestampMs).filter(t => t > 0);
     const avgResponseMs = tRespuestas.length ? tRespuestas.reduce((a,b)=>a+b,0)/tRespuestas.length : 0;
     
     return {
@@ -341,12 +399,6 @@ const MapDashboardInner = () => {
     };
   }, [emergencias, patrulleros, now]);
 
-  const emergenciasFiltradas = useMemo(() =>
-    emergencias.filter(e => e.latitud != null && e.longitud != null), [emergencias]);
-
-  const patrullerosFiltrados = useMemo(() =>
-    patrulleros.filter(p => p.latitud != null && p.longitud != null), [patrulleros]);
-
   const directionsCallback = useCallback((response: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
     if (status === 'OK' && response !== null) {
       setDirectionsResponse(response);
@@ -359,6 +411,13 @@ const MapDashboardInner = () => {
           distance: leg.distance?.text || '',
           duration: leg.duration?.text || ''
         });
+        
+        // Escribir etaMinutos a Firebase para el live tracking
+        if (selectedEmergenciaId && leg.duration?.value) {
+          const etaMin = Math.round(leg.duration.value / 60);
+          updateDoc(doc(db, 'emergencias', selectedEmergenciaId), { etaMinutos: etaMin })
+            .catch(err => console.error("Error actualizando ETA:", err));
+        }
       }
 
       // Ajustar el mapa para mostrar toda la ruta
@@ -369,7 +428,7 @@ const MapDashboardInner = () => {
       console.log('Error fetching directions:', status, response);
       setShouldFetchDirections(false);
     }
-  }, []);
+  }, [selectedEmergenciaId]);
 
   // Patrullero asignado a la emergencia seleccionada
   const activePatrol = selectedEmergencia?.patrullaAsignadaId 
@@ -461,6 +520,28 @@ const MapDashboardInner = () => {
         ))}
       </div>
 
+      {/* ── Alertas de Geocerca (Fuera de cuadrante) ── */}
+      {alertasGeocerca.length > 0 && (
+        <div style={{
+          backgroundColor: '#ff9800',
+          color: 'white',
+          padding: '8px 16px',
+          fontWeight: 'bold',
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'center',
+          overflowX: 'auto',
+          borderBottom: '1px solid #f57c00'
+        }}>
+          <span>⚠️ ALERTAS DE GEOCERCA:</span>
+          {alertasGeocerca.map(a => (
+            <span key={a.patrullaId} style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+              Unidad {a.nombre} fuera de {a.cuadranteNombre}
+            </span>
+          ))}
+        </div>
+      )}
+
       {hasCoaccion && <AlertaCoaccion />}
 
       {/* ── Panel de Misión Táctica ──────────────────────── */}
@@ -524,6 +605,13 @@ const MapDashboardInner = () => {
               <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Reportado</div>
               <div style={{ fontSize: '0.85rem' }}>{elapsedTime}</div>
             </div>
+            
+            {selectedEmergencia.audioUrl && (
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#aaa', marginBottom: '2px' }}>Evidencia SOS</div>
+                <audio src={selectedEmergencia.audioUrl} controls style={{ height: '24px', maxWidth: '180px' }} />
+              </div>
+            )}
           </div>
 
           <button
@@ -608,7 +696,66 @@ const MapDashboardInner = () => {
               />
             );
           })}
+
+          {/* Cuadrantes rendering */}
+          {cuadrantes.map(c => (
+            <Polygon
+              key={c.id}
+              path={c.path}
+              options={{
+                fillColor: '#00BFFF',
+                fillOpacity: 0.15,
+                strokeColor: '#00BFFF',
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                clickable: false
+              }}
+            />
+          ))}
+
+          {/* Herramienta de Dibujo */}
+          {isDrawingMode && (
+            <DrawingManager
+              onPolygonComplete={onPolygonComplete}
+              options={{
+                drawingControl: true,
+                drawingControlOptions: {
+                  position: window.google?.maps?.ControlPosition?.TOP_CENTER,
+                  drawingModes: [window.google?.maps?.drawing?.OverlayType?.POLYGON]
+                },
+                polygonOptions: {
+                  fillColor: '#FF9800',
+                  fillOpacity: 0.3,
+                  strokeWeight: 2,
+                  clickable: false,
+                  editable: true,
+                  zIndex: 1
+                }
+              }}
+            />
+          )}
         </GoogleMap>
+
+        {/* Botón Dibujar Cuadrante */}
+        <button
+          onClick={() => setIsDrawingMode(!isDrawingMode)}
+          style={{
+            position: 'absolute',
+            bottom: '16px',
+            right: '16px',
+            padding: '12px 20px',
+            backgroundColor: isDrawingMode ? '#ff4444' : '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            cursor: 'pointer',
+            zIndex: 10
+          }}
+        >
+          {isDrawingMode ? '✕ Cancelar Dibujo' : '✎ Dibujar Cuadrante'}
+        </button>
 
         {/* ── Lista de emergencias activas (sidebar flotante) ── */}
         {emergenciasFiltradas.filter(e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA').length > 0 && (

@@ -17,4 +17,16 @@ export interface Emergencia {
   patrullaApoyoId?: string | null;
   alertaWebSilenciada?: boolean;
   timestampMs: number;
+  
+  // ⏱️ SLA y Tiempos
+  horaAsignacionMs?: number;
+  horaLlegadaMs?: number;
+  etaMinutos?: number;
+  
+  // ⭐ Scoring y Confiabilidad
+  esFalsaAlarma?: boolean;
+  vecinoTrustScore?: number;
+  
+  // 📸 Multimedia (Grabación Silenciosa)
+  evidenciasAudioUrls?: string[];
 }

@@ -12,4 +12,12 @@ export interface Patrullero {
   tokenFCM: string;
   turno: 'DIA' | 'NOCHE';
   ultimaActualizacion: number;
+  
+  // 🚧 Geofencing
+  cuadranteAsignadoId?: string;
+  estaFueraDeZona?: boolean;
+  
+  // 🚗 Telemetría Fleet Management
+  frenadasBruscasTotales?: number;
+  velocidadMaximaRegistrada?: number;
 }
