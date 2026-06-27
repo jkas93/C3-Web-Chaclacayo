@@ -268,25 +268,6 @@ const MapDashboardInner = () => {
     return `Hace ${Math.floor(mins / 60)}h ${mins % 60}min`;
   }, [selectedEmergencia, now]);
 
-  const handleGeneratePublicLink = useCallback(async () => {
-    if (rol !== 'ADMIN') {
-      alert("Solo administradores pueden generar enlaces públicos.");
-      return;
-    }
-    try {
-      const docRef = await addDoc(collection(db, 'enlaces_publicos'), {
-        activo: true,
-        createdAt: Date.now()
-      });
-      const url = `${window.location.origin}/publico/${docRef.id}`;
-      await navigator.clipboard.writeText(url);
-      alert(`Enlace copiado al portapapeles:\n${url}`);
-    } catch (error) {
-      console.error("Error generando enlace:", error);
-      alert("Error al generar el enlace público.");
-    }
-  }, [rol]);
-
   if (loadError) return <div>Error loading maps</div>;
   if (!isLoaded) return <div>Cargando mapa táctico...</div>;
 
@@ -332,33 +313,6 @@ const MapDashboardInner = () => {
             </span>
           </div>
         ))}
-        
-        {/* Botón para generar enlace público (Solo ADMIN) */}
-        {rol === 'ADMIN' && (
-          <button
-            onClick={handleGeneratePublicLink}
-            style={{
-              background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-              color: 'white',
-              borderRadius: '12px',
-              padding: '12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              border: 'none',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
-              🔗 Mapa Público
-            </span>
-            <span style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: 'auto' }}>
-              Generar Enlace
-            </span>
-          </button>
-        )}
       </div>
 
       {/* ── Alertas de Geocerca (Fuera de cuadrante) ── */}

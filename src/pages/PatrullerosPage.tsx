@@ -1,9 +1,83 @@
-﻿import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../services/firebase';
+import { functions, db } from '../services/firebase';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { SERVICIO_CONFIG, TipoServicio } from '../types/enums';
+
+export const PublicLinkManager = ({ rol }: { rol: string }) => {
+  const [activeLink, setActiveLink] = useState<{ id: string } | null>(null);
+
+  useEffect(() => {
+    if (rol !== 'ADMIN') return;
+    const q = query(collection(db, 'enlaces_publicos'), where('activo', '==', true));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setActiveLink({ id: snapshot.docs[0].id });
+      } else {
+        setActiveLink(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [rol]);
+
+  if (rol !== 'ADMIN') return null;
+
+  const handleGenerate = async () => {
+    try {
+      const docRef = await addDoc(collection(db, 'enlaces_publicos'), {
+        activo: true,
+        createdAt: Date.now()
+      });
+      const url = `${window.location.origin}/publico/${docRef.id}`;
+      await navigator.clipboard.writeText(url);
+      alert(`Enlace generado y copiado:\n${url}`);
+    } catch (e) {
+      console.error(e);
+      alert('Error al generar enlace');
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!activeLink) return;
+    try {
+      await updateDoc(doc(db, 'enlaces_publicos', activeLink.id), { activo: false });
+      alert('El enlace ha sido caducado. Ya no se podrá acceder al mapa público con él.');
+    } catch (e) {
+      console.error(e);
+      alert('Error al caducar enlace');
+    }
+  };
+
+  const handleCopy = () => {
+    if (!activeLink) return;
+    const url = `${window.location.origin}/publico/${activeLink.id}`;
+    navigator.clipboard.writeText(url);
+    alert('Enlace copiado al portapapeles');
+  };
+
+  return (
+    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      <div>
+        <h2 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: '#1e293b' }}>🌐 Mapa Público en Vivo</h2>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+          {activeLink ? 'Actualmente hay un enlace público activo.' : 'No hay ningún enlace público activo en este momento.'}
+        </p>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        {activeLink ? (
+          <>
+            <button onClick={handleCopy} className="btn" style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', fontWeight: 600 }}>📋 Copiar URL</button>
+            <button onClick={handleRevoke} className="btn" style={{ background: '#fee2e2', color: '#dc2626', border: 'none', fontWeight: 600 }}>🛑 Caducar Enlace</button>
+          </>
+        ) : (
+          <button onClick={handleGenerate} className="btn btn--primary" style={{ fontWeight: 600 }}>✨ Generar Enlace</button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const formatTimeAgo = (timestampMs: number | undefined): string => {
   if (!timestampMs) return 'Sin datos';
@@ -98,6 +172,7 @@ export const PatrullerosPage = () => {
       </header>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }} role="region" aria-labelledby="patrulleros-heading">
+        <PublicLinkManager rol={rol!} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
           {patrulleros.map(p => {
             const stale = isStale(p.ultimaActualizacion);
