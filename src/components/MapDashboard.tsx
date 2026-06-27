@@ -54,14 +54,14 @@ function getEmergenciaIcon(tipo: string, isSelected: boolean, isCoac: boolean) {
 
   return {
     size,
-    svgContent: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">${svgContent}</svg>`
+    htmlContent: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 56 56">${svgContent}</svg>`
   };
 }
 
 /** Ícono de unidad móvil top-down estilo Uber, diferenciado por tipoServicio */
 function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: boolean) {
   const size = isAssigned ? 56 : 44;
-  let svgContent: string;
+  let htmlContent: string;
 
   const pulse = isAssigned
     ? `<circle cx="26" cy="26" r="25" fill="none" stroke="#00BFFF" stroke-width="3" stroke-dasharray="4,3"/>`
@@ -69,7 +69,7 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
 
   if (tipoServicio === 'SALUD') {
     // Ambulancia top-down: blanca con cruz roja
-    svgContent = `
+    let svgContent = `
       ${pulse}
       <rect x="10" y="8" width="32" height="36" rx="6" fill="${isActive ? 'white' : '#90A4AE'}" stroke="#C62828" stroke-width="2"/>
       <rect x="14" y="12" width="24" height="28" rx="4" fill="${isActive ? '#FFEBEE' : '#CFD8DC'}"/>
@@ -79,9 +79,10 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
       <rect x="12" y="36" width="9" height="6" rx="2" fill="${isActive ? '#CFD8DC' : '#90A4AE'}"/>
       <rect x="31" y="36" width="9" height="6" rx="2" fill="${isActive ? '#CFD8DC' : '#90A4AE'}"/>
     `;
+    htmlContent = `<div class="marker-rotation-container" style="width: ${size}px; height: ${size}px; transform: rotate(0deg); transition: transform 0.8s ease-out;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 52 52">${svgContent}</svg></div>`;
   } else if (tipoServicio === 'BOMBEROS') {
     // Camión bomberos top-down: rojo
-    svgContent = `
+    let svgContent = `
       ${pulse}
       <rect x="8" y="6" width="36" height="40" rx="6" fill="${isActive ? '#C62828' : '#78909C'}" stroke="#B71C1C" stroke-width="2"/>
       <rect x="12" y="10" width="28" height="32" rx="4" fill="${isActive ? '#E53935' : '#90A4AE'}"/>
@@ -92,24 +93,20 @@ function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: bool
       <circle cx="16" cy="42" r="4" fill="${isActive ? '#37474F' : '#546E7A'}"/>
       <circle cx="36" cy="42" r="4" fill="${isActive ? '#37474F' : '#546E7A'}"/>
     `;
+    htmlContent = `<div class="marker-rotation-container" style="width: ${size}px; height: ${size}px; transform: rotate(0deg); transition: transform 0.8s ease-out;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 52 52">${svgContent}</svg></div>`;
   } else {
-    // Patrulla policial top-down: azul oscuro
-    svgContent = `
-      ${pulse}
-      <rect x="10" y="7" width="32" height="38" rx="7" fill="${isActive ? '#0D47A1' : '#546E7A'}" stroke="#1565C0" stroke-width="2"/>
-      <rect x="14" y="11" width="24" height="24" rx="4" fill="${isActive ? '#1565C0' : '#607D8B'}"/>
-      <rect x="15" y="12" width="22" height="11" rx="3" fill="${isActive ? '#BBDEFB' : '#90A4AE'}"/>
-      <rect x="10" y="20" width="4" height="8" rx="2" fill="${isActive ? '#FFD600' : '#B0BEC5'}"/>
-      <rect x="38" y="20" width="4" height="8" rx="2" fill="${isActive ? '#FFD600' : '#B0BEC5'}"/>
-      <circle cx="16" cy="38" r="4" fill="${isActive ? '#212121' : '#546E7A'}"/>
-      <circle cx="36" cy="38" r="4" fill="${isActive ? '#212121' : '#546E7A'}"/>
-      <rect x="20" y="36" width="12" height="6" rx="2" fill="${isActive ? '#BBDEFB' : '#90A4AE'}"/>
+    // Patrulla policial top-down: imagen PNG personalizada
+    htmlContent = `
+      <div class="marker-rotation-container" style="position: relative; width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; transform: rotate(0deg); transition: transform 0.8s ease-out;">
+        ${isAssigned ? `<div style="position: absolute; width: 100%; height: 100%; border: 3px dashed #00BFFF; border-radius: 50%; box-sizing: border-box;"></div>` : ''}
+        <img src="/auto-policia-v2.png" style="width: 100%; height: 100%; object-fit: contain; filter: ${isActive ? 'drop-shadow(0px 4px 6px rgba(0,0,0,0.3))' : 'grayscale(100%) opacity(70%) drop-shadow(0px 4px 6px rgba(0,0,0,0.3))'};" />
+      </div>
     `;
   }
 
   return {
     size,
-    svgContent: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 52 52">${svgContent}</svg>`
+    htmlContent
   };
 }
 
@@ -138,10 +135,22 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** Calcula el bearing (rumbo) entre dos coordenadas (0 a 360 grados) */
+function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  const brng = toDeg(Math.atan2(y, x));
+  return (brng + 360) % 360;
+}
+
 /** Wrapper personalizado para usar AdvancedMarkerElement con interpolación suave */
 const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = true }: {
   position: google.maps.LatLngLiteral;
-  iconData: { size: number; svgContent: string };
+  iconData: { size: number; htmlContent: string };
   zIndex?: number;
   onClick?: () => void;
   animate?: boolean;
@@ -162,12 +171,12 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = t
     containerRef.current.style.cursor = onClick ? 'pointer' : 'default';
   }
 
-  // Update SVG content
+  // Update HTML content
   useEffect(() => {
     if (containerRef.current) {
-      containerRef.current.innerHTML = iconData.svgContent;
+      containerRef.current.innerHTML = iconData.htmlContent;
     }
-  }, [iconData.svgContent]);
+  }, [iconData.htmlContent]);
 
   // Create & Teardown Marker
   useEffect(() => {
@@ -219,6 +228,17 @@ const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, animate = t
       if (markerRef.current) {
         markerRef.current.position = interpolated;
         currentPosRef.current = interpolated;
+        
+        // Rotar el carrito hacia la dirección en la que se mueve
+        if (Math.abs(targetPosRef.current.lat - from.lat) > 0.000005 || Math.abs(targetPosRef.current.lng - from.lng) > 0.000005) {
+          const bearing = calculateBearing(from.lat, from.lng, targetPosRef.current.lat, targetPosRef.current.lng);
+          if (containerRef.current) {
+            const rotationContainer = containerRef.current.querySelector('.marker-rotation-container') as HTMLElement;
+            if (rotationContainer) {
+              rotationContainer.style.transform = `rotate(${bearing}deg)`;
+            }
+          }
+        }
       }
 
       if (t < 1) {
@@ -694,7 +714,7 @@ const MapDashboardInner = () => {
 
           {/* Marcadores de Unidades — Top-down estilo Uber por tipo de servicio */}
           {patrullerosFiltrados.map((p) => {
-            const isActive = p.estado === EstadoPatrullero.EN_SERVICIO;
+            const isActive = p.estado !== EstadoPatrullero.FUERA_DE_SERVICIO;
             const isAssigned = selectedEmergencia?.patrullaAsignadaId === p.uid;
             const iconData = getUnidadIcon(p.tipoServicio, isActive, isAssigned);
             return (
