@@ -9,29 +9,39 @@ import { HistorialPage } from './pages/HistorialPage';
 import { OperadoresPage } from './pages/OperadoresPage';
 import './App.css';
 
+import { PublicTrackingPage } from './pages/PublicTrackingPage';
+
 function App() {
   return (
     <BrowserRouter>
-      <ProtectedRoute>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<MapPage />} />
-            <Route path="emergencias" element={<TablePage />} />
-            <Route path="patrulleros" element={<PatrullerosPage />} />
-            <Route path="usuarios" element={<UsuariosPage />} />
-            <Route path="historial" element={<HistorialPage />} />
-            <Route 
-              path="operadores" 
-              element={
-                <ProtectedRoute allowedRoles={['ADMIN']}>
-                  <OperadoresPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </ProtectedRoute>
+      <Routes>
+        {/* Ruta Pública (No requiere Auth) */}
+        <Route path="/publico/:token" element={<PublicTrackingPage />} />
+        
+        {/* Rutas Privadas (Requieren Auth) */}
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<MapPage />} />
+                <Route path="emergencias" element={<TablePage />} />
+                <Route path="patrulleros" element={<PatrullerosPage />} />
+                <Route path="usuarios" element={<UsuariosPage />} />
+                <Route path="historial" element={<HistorialPage />} />
+                <Route 
+                  path="operadores" 
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                      <OperadoresPage />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </ProtectedRoute>
+        } />
+      </Routes>
     </BrowserRouter>
   );
 }

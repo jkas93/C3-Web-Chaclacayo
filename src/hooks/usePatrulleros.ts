@@ -17,7 +17,7 @@ export const usePatrulleros = (rol: RolOperador | null) => {
     if (!rol) return;
 
     let q;
-    if (rol === 'ADMIN') {
+    if (rol === 'ADMIN' || rol === ('PUBLIC' as RolOperador)) {
       q = query(collection(db, 'patrulleros'));
     } else {
       q = query(
