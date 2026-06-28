@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { ref, onValue } from 'firebase/database';
+import { db, database } from '../services/firebase';
 import type { Emergencia } from '../types/Emergencia';
 import type { RolOperador } from '../types/enums';
 
@@ -34,13 +35,34 @@ export const useEmergencias = (rol: RolOperador | null) => {
       );
     }
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // 1. Escuchar Firestore para datos estáticos y nuevo historial
+    const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Emergencia));
       setEmergencias(data);
       setLoading(false);
     });
 
-    return unsubscribe;
+    // 2. Escuchar RTDB para tracking en vivo
+    const trackingRef = ref(database, 'tracking/emergencias');
+    const unsubscribeRTDB = onValue(trackingRef, (snapshot) => {
+      const trackingData = snapshot.val();
+      if (trackingData) {
+        setEmergencias(prev => 
+          prev.map(e => {
+            const update = trackingData[e.id];
+            if (update) {
+              return { ...e, latitudActual: update.latitud, longitudActual: update.longitud };
+            }
+            return e;
+          })
+        );
+      }
+    });
+
+    return () => {
+      unsubscribeFirestore();
+      unsubscribeRTDB();
+    };
   }, [rol]);
 
   return { emergencias, loading };

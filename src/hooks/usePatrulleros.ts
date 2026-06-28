@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { ref, onValue } from 'firebase/database';
+import { db, database } from '../services/firebase';
 import type { Patrullero } from '../types/Patrullero';
 import type { RolOperador } from '../types/enums';
 
@@ -26,13 +27,34 @@ export const usePatrulleros = (rol: RolOperador | null) => {
       );
     }
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // 1. Escuchar Firestore para datos estáticos
+    const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as Patrullero));
       setPatrulleros(data);
       setLoading(false);
     });
 
-    return unsubscribe;
+    // 2. Escuchar RTDB para tracking en vivo
+    const trackingRef = ref(database, 'tracking/patrulleros');
+    const unsubscribeRTDB = onValue(trackingRef, (snapshot) => {
+      const trackingData = snapshot.val();
+      if (trackingData) {
+        setPatrulleros(prevPatrulleros => 
+          prevPatrulleros.map(p => {
+            const update = trackingData[p.uid];
+            if (update) {
+              return { ...p, latitud: update.latitud, longitud: update.longitud };
+            }
+            return p;
+          })
+        );
+      }
+    });
+
+    return () => {
+      unsubscribeFirestore();
+      unsubscribeRTDB();
+    };
   }, [rol]);
 
   return { patrulleros, loading };
