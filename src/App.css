@@ -509,7 +509,7 @@
 .c3-listbox-option {
   position: relative; display: flex; align-items: center; gap: 0.5rem;
   padding: 0.5rem 0.75rem 0.5rem 2.25rem; /* py-2 pl-9 pr-3 */
-  cursor: default; select: none;
+  cursor: default; user-select: none;
   font-size: 0.875rem; color: #111827; /* text-gray-900 */
   list-style: none; outline: none;
 }
