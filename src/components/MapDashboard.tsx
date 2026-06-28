@@ -284,6 +284,7 @@ const MapDashboardInner = () => {
       <div
         role="status"
         aria-live="polite"
+        className="mobile-padding-top mobile-carousel"
         style={{
           backgroundColor: 'var(--c3-bg)',
           padding: '16px',
@@ -358,7 +359,7 @@ const MapDashboardInner = () => {
           borderBottom: '2px solid #00BFFF',
           flexWrap: 'wrap'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+          <div className="mobile-carousel" style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontSize: '0.7rem', color: '#00BFFF', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
                 Misión Táctica Activa
@@ -534,6 +535,7 @@ const MapDashboardInner = () => {
         {isDrawingMode && draftPolygon.length >= 3 && (
           <button
             onClick={onPolygonComplete}
+            className="desktop-only"
             style={{
               position: 'absolute',
               bottom: '64px',
@@ -558,6 +560,7 @@ const MapDashboardInner = () => {
             setIsDrawingMode(!isDrawingMode);
             setDraftPolygon([]);
           }}
+          className="desktop-only"
           style={{
             position: 'absolute',
             bottom: '16px',
@@ -583,7 +586,8 @@ const MapDashboardInner = () => {
             bottom: '16px',
             left: '16px',
             maxHeight: '240px',
-            width: '300px',
+            width: 'calc(100vw - 32px)',
+            maxWidth: '300px',
             overflowY: 'auto',
             backgroundColor: 'rgba(11, 32, 70, 0.92)',
             borderRadius: '10px',

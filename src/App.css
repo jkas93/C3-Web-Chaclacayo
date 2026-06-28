@@ -372,6 +372,29 @@
     display: none !important;
   }
 
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-padding-top {
+    padding-top: 56px !important;
+  }
+
+  .mobile-carousel {
+    display: flex !important;
+    overflow-x: auto !important;
+    scroll-snap-type: x mandatory;
+    flex-wrap: nowrap !important;
+    padding-bottom: 8px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-carousel > * {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+    min-width: 140px;
+  }
+
   .mobile-sidebar {
     transition: transform 250ms ease;
   }
