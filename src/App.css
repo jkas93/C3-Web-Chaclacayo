@@ -349,6 +349,10 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+.mobile-toggle-btn {
+  display: none; /* Hidden on desktop */
+}
+
 /* --- Responsive (14. Breakpoints) --- */
 @media (max-width: 768px) {
   .mobile-toggle-btn {
@@ -432,10 +436,6 @@
   .page-header__title {
     font-size: 1.1rem;
   }
-}
-
-.mobile-toggle-btn {
-  display: none; /* Hidden on desktop */
 }
 
 /* ================================================================
