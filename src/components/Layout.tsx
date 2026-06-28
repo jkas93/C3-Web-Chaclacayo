@@ -216,7 +216,7 @@ export const Layout = () => {
         </button>
 
         {/* Desktop Sidebar */}
-        <aside className="app-sidebar" role="navigation" aria-label="Menú principal">
+        <aside className="app-sidebar desktop-sidebar" role="navigation" aria-label="Menú principal">
           <SidebarContent {...sidebarProps} />
         </aside>
 
@@ -235,12 +235,11 @@ export const Layout = () => {
             {/* Sidebar panel deslizante */}
             <TransitionChild>
               <DialogPanel
-                className="app-sidebar"
+                className="app-sidebar mobile-sidebar"
                 style={{
                   position: 'fixed',
                   top: 0, left: 0, bottom: 0,
                   zIndex: 1060,
-                  transition: 'transform 250ms ease, opacity 250ms ease',
                 }}
               >
                 <SidebarContent

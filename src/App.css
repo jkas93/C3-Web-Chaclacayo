@@ -353,8 +353,8 @@
 @media (max-width: 768px) {
   .mobile-toggle-btn {
     display: flex;
-    alignItems: center;
-    justifyContent: center;
+    align-items: center;
+    justify-content: center;
     position: fixed;
     top: 12px;
     left: 12px;
@@ -368,17 +368,16 @@
     box-shadow: var(--c3-shadow-sm);
   }
 
-  .app-sidebar {
-    position: fixed;
-    left: -var(--c3-sidebar-width);
-    height: 100vh;
-    z-index: 2000;
-    transition: left var(--c3-transition);
+  .desktop-sidebar {
+    display: none !important;
   }
 
-  .app-sidebar--open {
-    left: 0;
+  .mobile-sidebar {
+    transition: transform 250ms ease;
   }
+  .mobile-sidebar[data-enter] { transform: translateX(-100%); }
+  .mobile-sidebar[data-entered] { transform: translateX(0); }
+  .mobile-sidebar[data-leave] { transform: translateX(-100%); }
 
   .app-main {
     width: 100vw;
