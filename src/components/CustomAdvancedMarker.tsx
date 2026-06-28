@@ -108,7 +108,7 @@ export const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, anim
   // Update Click Listener
   useEffect(() => {
     if (markerRef.current && onClick) {
-      const listener = markerRef.current.addListener('click', onClick);
+      const listener = markerRef.current.addListener('gmp-click', onClick);
       return () => listener.remove();
     }
   }, [onClick]);

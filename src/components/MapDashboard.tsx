@@ -53,9 +53,15 @@ const MapDashboardInner = () => {
   const [draftPolygon, setDraftPolygon] = useState<{lat: number, lng: number}[]>([]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'cuadrantes'), snap => {
-      setCuadrantes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    const unsub = onSnapshot(
+      collection(db, 'cuadrantes'), 
+      snap => {
+        setCuadrantes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      },
+      err => {
+        console.warn("No se pudieron cargar los cuadrantes (posible falta de permisos):", err.message);
+      }
+    );
     return () => unsub();
   }, []);
 
