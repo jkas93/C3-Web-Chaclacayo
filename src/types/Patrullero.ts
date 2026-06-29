@@ -3,7 +3,6 @@ import { EstadoPatrullero, TipoServicio } from './enums';
 export interface Patrullero {
   uid: string;
   nombre: string;
-  codigo: string;
   email?: string;
   tipoServicio: TipoServicio;          // POLICIA | SALUD | BOMBEROS
   latitud: number;
@@ -20,4 +19,10 @@ export interface Patrullero {
   // 🚗 Telemetría Fleet Management
   frenadasBruscasTotales?: number;
   velocidadMaximaRegistrada?: number;
+  
+  // 🏢 Datos Operativos Adicionales
+  unidad?: string;
+  placa?: string;
+  cip?: string;
+  emergenciasAtendidasHoy?: number;
 }

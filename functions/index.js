@@ -281,10 +281,10 @@ exports.crearPatrullero = onCall(async (request) => {
         throw new HttpsError('permission-denied', 'Solo el ADMIN puede crear unidades móviles.');
     }
 
-    const { email, password, codigo, nombre, turno, tipoServicio } = request.data;
+    const { email, password, nombre, turno, tipoServicio, unidad, placa, cip } = request.data;
 
-    if (!email || !password || !codigo || !nombre || !tipoServicio) {
-        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios: email, password, codigo, nombre, tipoServicio.');
+    if (!email || !password || !nombre || !tipoServicio || !unidad) {
+        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios: email, password, nombre, tipoServicio, unidad.');
     }
 
     if (!TIPOS_SERVICIO_VALIDOS.includes(tipoServicio)) {
@@ -294,15 +294,6 @@ exports.crearPatrullero = onCall(async (request) => {
 
     if (password.length < 6) {
         throw new HttpsError('invalid-argument', 'La contraseña debe tener al menos 6 caracteres.');
-    }
-
-    // Verificar código duplicado
-    const codigoExistente = await db.collection('patrulleros')
-        .where('codigo', '==', codigo)
-        .limit(1)
-        .get();
-    if (!codigoExistente.empty) {
-        throw new HttpsError('already-exists', `El código "${codigo}" ya está en uso.`);
     }
 
     try {
@@ -316,7 +307,6 @@ exports.crearPatrullero = onCall(async (request) => {
 
         await db.collection('patrulleros').doc(uid).set({
             id: uid,
-            codigo,
             nombre,
             turno: turno || 'DIA',
             email,
@@ -325,15 +315,66 @@ exports.crearPatrullero = onCall(async (request) => {
             latitud: -11.9765,
             longitud: -76.7725,
             ultimaActualizacion: Date.now(),
-            tokenFCM: ''
+            tokenFCM: '',
+            unidad: unidad,
+            placa: placa || '-',
+            cip: cip || '-',
+            emergenciasAtendidasHoy: 0,
+            frenadasBruscasTotales: 0
         });
 
         await registrarAuditoria('PATRULLERO_CREADO', request.auth.uid, null,
-            `Creado: ${codigo} (${tipoServicio})`);
+            `Creado: ${unidad} (${tipoServicio})`);
 
         return { success: true, uid };
     } catch (error) {
         console.error("Error creando patrullero:", error);
+        throw new HttpsError('internal', error.message);
+    }
+});
+
+// =============================================================================
+// 4B. EDITAR PATRULLERO (Unidad Móvil)
+// =============================================================================
+exports.editarPatrullero = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Debe estar autenticado como operador C3.');
+    }
+
+    const operadorDoc = await db.collection('operadores_c3').doc(request.auth.uid).get();
+    if (!operadorDoc.exists || operadorDoc.data().rol !== 'ADMIN') {
+        throw new HttpsError('permission-denied', 'Solo el ADMIN puede editar unidades móviles.');
+    }
+
+    const { uid, nombre, turno, tipoServicio, unidad, placa, cip } = request.data;
+
+    if (!uid || !nombre || !tipoServicio || !unidad) {
+        throw new HttpsError('invalid-argument', 'Faltan campos obligatorios para editar.');
+    }
+
+    if (!TIPOS_SERVICIO_VALIDOS.includes(tipoServicio)) {
+        throw new HttpsError('invalid-argument', `tipoServicio inválido.`);
+    }
+
+    try {
+        await db.collection('patrulleros').doc(uid).update({
+            nombre,
+            turno,
+            tipoServicio,
+            unidad,
+            placa: placa || '-',
+            cip: cip || '-'
+        });
+
+        // Opcional: Actualizar el nombre en Auth
+        await admin.auth().updateUser(uid, {
+            displayName: nombre
+        });
+
+        await registrarAuditoria('PATRULLERO_EDITADO', request.auth.uid, null, `Editado: ${unidad} (${tipoServicio})`);
+        return { success: true };
+    } catch (error) {
+        console.error("Error editando patrullero:", error);
         throw new HttpsError('internal', error.message);
     }
 });

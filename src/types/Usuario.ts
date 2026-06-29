@@ -4,6 +4,10 @@ export interface Usuario {
   dni: string;
   telefono: string;
   direccion: string;
+  correo?: string;
+  fechaNacimiento?: string;
+  contactoEmergenciaNombre?: string;
+  contactoEmergenciaTelefono?: string;
   tokenFCM: string;
   deviceId?: string;          // UUID del dispositivo registrado (vacío = sin dispositivo vinculado)
   creadoEnMs: number;

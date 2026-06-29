@@ -133,9 +133,9 @@ export const TablaEmergencias = () => {
 
   // Mapa de unidades para resolución de nombres
   const unidadMap = useMemo(() => {
-    const map: Record<string, { nombre: string; codigo: string; tipoServicio: string }> = {};
+    const map: Record<string, { nombre: string; tipoServicio: string }> = {};
     patrulleros.forEach(p => {
-      map[p.uid] = { nombre: p.nombre, codigo: p.codigo, tipoServicio: p.tipoServicio };
+      map[p.uid] = { nombre: p.nombre, tipoServicio: p.tipoServicio };
     });
     return map;
   }, [patrulleros]);
@@ -285,8 +285,8 @@ export const TablaEmergencias = () => {
           {emergenciasFiltradas.map((e, index) => {
             const nextAction = getNextAction(e.estado);
             const unidadInfo = e.patrullaAsignadaId ? unidadMap[e.patrullaAsignadaId] : null;
-            const unidadDisplay = unidadInfo
-              ? `${unidadInfo.nombre} (${unidadInfo.codigo})`
+            const unidadDisplay = unidadInfo 
+              ? `${unidadInfo.nombre}` 
               : (e.patrullaAsignadaId || '—');
             const vecinoDisplay = e.vecinoNombre
               ? `${e.vecinoNombre}${e.vecinoDni ? ` (${e.vecinoDni})` : ''}`
@@ -301,7 +301,7 @@ export const TablaEmergencias = () => {
             const listboxOptions: C3ListboxOption[] = unidadesCompatibles.map(p => ({
               value: p.uid,
               label: p.nombre,
-              description: p.codigo,
+              description: '',
               icon: tipoServicioLabel?.emoji,
             }));
 

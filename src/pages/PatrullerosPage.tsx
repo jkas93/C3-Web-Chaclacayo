@@ -101,48 +101,102 @@ export const PatrullerosPage = () => {
   const { rol } = useAuth();
   const { patrulleros } = usePatrulleros(rol);
   const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingUid, setEditingUid] = useState<string | null>(null);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    codigo: '',
-    nombre: '',
+    nombre: '',       // Nombre del Oficial
+    unidad: '',       // Nombre del Vehículo
+    placa: '',        // Placa
+    cip: '',          // CIP
     turno: 'DIA',
     tipoServicio: (rol === 'ADMIN' ? '' : rol) as TipoServicio | '',
     email: '',
     password: '',
   });
 
-  const handleCrear = async (e: React.FormEvent) => {
+  const openCreateModal = () => {
+    setFormData({
+      nombre: '', unidad: '', placa: '', cip: '',
+      turno: 'DIA', tipoServicio: (rol === 'ADMIN' ? '' : rol) as TipoServicio | '',
+      email: '', password: ''
+    });
+    setIsEditing(false);
+    setEditingUid(null);
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const openEditModal = (p: any) => {
+    setFormData({
+      nombre: p.nombre,
+      unidad: p.unidad || '',
+      placa: p.placa || '',
+      cip: p.cip || '',
+      turno: p.turno || 'DIA',
+      tipoServicio: p.tipoServicio,
+      email: p.email || '',
+      password: '' // Password no se llena en edit
+    });
+    setIsEditing(true);
+    setEditingUid(p.uid);
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!formData.codigo || !formData.nombre || !formData.email || !formData.password || !formData.tipoServicio) {
-      setErrorMsg('Por favor completa todos los campos, incluyendo el Tipo de Servicio.');
+    if (!formData.nombre || !formData.tipoServicio || !formData.unidad) {
+      setErrorMsg('Por favor completa todos los campos obligatorios (*).');
       return;
     }
 
-    if (formData.password.length < 6) {
-      setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
-      return;
+    if (!isEditing) {
+      if (!formData.email || !formData.password) {
+        setErrorMsg('Email y contraseña son obligatorios para crear.');
+        return;
+      }
+      if (formData.password.length < 6) {
+        setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+        return;
+      }
     }
 
     try {
       setIsSubmitting(true);
-      const crearPatrulleroFn = httpsCallable(functions, 'crearPatrullero');
-      await crearPatrulleroFn({
-        codigo: formData.codigo.trim().toUpperCase(),
-        nombre: formData.nombre.trim(),
-        turno: formData.turno,
-        tipoServicio: formData.tipoServicio,
-        email: formData.email.trim().toLowerCase(),
-        password: formData.password,
-      });
+      if (isEditing) {
+        const editarPatrulleroFn = httpsCallable(functions, 'editarPatrullero');
+        await editarPatrulleroFn({
+          uid: editingUid,
+          nombre: formData.nombre.trim(),
+          unidad: formData.unidad.trim(),
+          placa: formData.placa.trim().toUpperCase(),
+          cip: formData.cip.trim(),
+          turno: formData.turno,
+          tipoServicio: formData.tipoServicio,
+        });
+      } else {
+        const crearPatrulleroFn = httpsCallable(functions, 'crearPatrullero');
+        await crearPatrulleroFn({
+          nombre: formData.nombre.trim(),
+          unidad: formData.unidad.trim(),
+          placa: formData.placa.trim().toUpperCase(),
+          cip: formData.cip.trim(),
+          turno: formData.turno,
+          tipoServicio: formData.tipoServicio,
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+        });
+      }
 
       setShowModal(false);
-      setFormData({ codigo: '', nombre: '', turno: 'DIA', tipoServicio: '', email: '', password: '' });
     } catch (error) {
-      const msg = (error instanceof Error ? error.message : String(error)) || 'Error desconocido al crear unidad';
-      console.error('Error al crear patrullero:', error);
+      const msg = (error instanceof Error ? error.message : String(error)) || `Error al ${isEditing ? 'editar' : 'crear'} unidad`;
+      console.error(msg, error);
       setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
@@ -161,19 +215,21 @@ export const PatrullerosPage = () => {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <header className="page-header">
         <h1 className="page-header__title" id="patrulleros-heading">Gestión de Unidades Móviles</h1>
-        <button
-          id="add-patrullero-btn"
-          onClick={() => setShowModal(true)}
-          className="btn btn--primary"
-          aria-label="Agregar nueva unidad móvil"
-        >
-          + Nueva Unidad
-        </button>
+        {rol === 'ADMIN' && (
+          <button
+            id="add-patrullero-btn"
+            onClick={openCreateModal}
+            className="btn btn--primary"
+            aria-label="Agregar nueva unidad móvil"
+          >
+            + Nueva Unidad
+          </button>
+        )}
       </header>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }} role="region" aria-labelledby="patrulleros-heading">
         <PublicLinkManager rol={rol!} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
           {patrulleros.map(p => {
             const stale = isStale(p.ultimaActualizacion);
             const shouldWarn = stale && p.estado !== 'FUERA_DE_SERVICIO';
@@ -188,7 +244,6 @@ export const PatrullerosPage = () => {
                   opacity: shouldWarn ? 0.7 : 1,
                   position: 'relative'
                 }}
-                aria-label={`Unidad ${p.nombre}, tipo: ${servCfg.label}, estado: ${p.estado}${shouldWarn ? ', sin señal reciente' : ''}`}
               >
                 {shouldWarn && (
                   <div style={{
@@ -199,8 +254,20 @@ export const PatrullerosPage = () => {
                     ⚠️ Sin señal
                   </div>
                 )}
+                
+                {rol === 'ADMIN' && (
+                  <button 
+                    onClick={() => openEditModal(p)}
+                    style={{
+                      position: 'absolute', top: '8px', right: shouldWarn ? '75px' : '8px',
+                      background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px',
+                      cursor: 'pointer', padding: '2px 6px', fontSize: '12px'
+                    }}
+                  >
+                    ✏️ Editar
+                  </button>
+                )}
 
-                {/* Badge de tipo de servicio */}
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: '4px',
                   background: servCfg.bgColor, color: servCfg.color,
@@ -212,9 +279,9 @@ export const PatrullerosPage = () => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <h3 style={{ margin: '0 0 4px 0' }}>{p.nombre}</h3>
+                    <h3 style={{ margin: '0 0 2px 0' }}>{p.unidad || p.nombre}</h3>
                     <span style={{ fontSize: '0.8rem', color: 'var(--c3-text-secondary)', background: '#eee', padding: '2px 6px', borderRadius: '4px' }}>
-                      {p.codigo} — Turno: {p.turno}
+                      Placa: {p.placa || 'S/N'}
                     </span>
                   </div>
                   <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: getEstadoColor(p.estado) }} role="status">
@@ -222,7 +289,17 @@ export const PatrullerosPage = () => {
                   </span>
                 </div>
 
-                <p style={{ fontSize: '0.85rem', color: 'var(--c3-text-secondary)', marginTop: '12px', marginBottom: '4px' }}>
+                <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#475569' }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    <strong>
+                      {p.tipoServicio === 'POLICIA' ? '👮 Oficial:' : 
+                       p.tipoServicio === 'SALUD' ? '⚕️ Paramédico:' : 
+                       p.tipoServicio === 'BOMBEROS' ? '🚒 Bombero:' : '👤 Encargado:'}
+                    </strong> {p.nombre} {p.cip && p.cip !== '-' ? `(ID: ${p.cip})` : ''}
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.85rem', color: 'var(--c3-text-secondary)', marginTop: '8px', marginBottom: '4px' }}>
                   <span aria-hidden="true">📍</span> {p.latitud?.toFixed(4) ?? 'N/A'}, {p.longitud?.toFixed(4) ?? 'N/A'}
                 </p>
                 <p style={{
@@ -242,24 +319,23 @@ export const PatrullerosPage = () => {
         </div>
       </div>
 
-      {/* Modal de creación */}
       {showModal && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-          <div className="modal-content">
-            <h2 id="modal-title">Nueva Unidad Móvil</h2>
+          <div className="modal-content" style={{ maxHeight: '90vh', overflowY: 'auto', width: '500px' }}>
+            <h2 id="modal-title">{isEditing ? 'Editar Unidad' : 'Nueva Unidad Móvil'}</h2>
             {errorMsg && (
               <div style={{ background: '#FFEBEE', color: '#C62828', padding: '10px', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem' }}>
                 {errorMsg}
               </div>
             )}
-            <form onSubmit={handleCrear} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-              {/* Tipo de Servicio — Selector visual */}
+              {/* Tipo de Servicio */}
               <div className="form-group">
                 <label className="form-label">Tipo de Servicio <span style={{ color: '#C62828' }}>*</span></label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {(Object.values(TipoServicio) as TipoServicio[])
-                    .filter(tipo => rol === 'ADMIN' || tipo === rol) // Solo muestra su rol si no es admin
+                    .filter(tipo => rol === 'ADMIN' || tipo === rol)
                     .map(tipo => {
                     const cfg = SERVICIO_CONFIG[tipo];
                     const selected = formData.tipoServicio === tipo;
@@ -268,21 +344,17 @@ export const PatrullerosPage = () => {
                         key={tipo}
                         type="button"
                         onClick={() => setFormData({ ...formData, tipoServicio: tipo })}
-                        disabled={rol !== 'ADMIN'} // Bloqueado si no es admin
+                        disabled={rol !== 'ADMIN'}
                         style={{
-                          flex: 1, minWidth: '90px',
-                          padding: '10px 8px',
-                          borderRadius: '8px',
+                          flex: 1, minWidth: '90px', padding: '10px 8px', borderRadius: '8px',
                           border: selected ? `2px solid ${cfg.color}` : '2px solid #ddd',
                           background: selected ? cfg.bgColor : 'white',
                           color: selected ? cfg.color : '#555',
                           fontWeight: selected ? 'bold' : 'normal',
                           cursor: rol === 'ADMIN' ? 'pointer' : 'default',
-                          fontSize: '0.85rem',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                          fontSize: '0.85rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                           transition: 'all 0.15s',
                         }}
-                        aria-pressed={selected}
                       >
                         <span style={{ fontSize: '1.4rem' }}>{cfg.emoji}</span>
                         {cfg.label}
@@ -292,74 +364,55 @@ export const PatrullerosPage = () => {
                 </div>
               </div>
 
+              {/* Identificación Básica */}
               <div className="form-group">
-                <label htmlFor="pat-codigo" className="form-label">Código (Ej. P-01) <span style={{ color: '#C62828' }}>*</span></label>
-                <input
-                  id="pat-codigo" required
-                  value={formData.codigo}
-                  onChange={e => setFormData({ ...formData, codigo: e.target.value })}
-                  className="form-input" aria-required="true"
-                  placeholder="P-01, S-01, B-01..."
-                />
+                <label htmlFor="pat-unidad" className="form-label">Unidad (Vehículo) <span style={{ color: '#C62828' }}>*</span></label>
+                <input id="pat-unidad" required value={formData.unidad} onChange={e => setFormData({ ...formData, unidad: e.target.value })} className="form-input" placeholder="Ej. Unidad Alpha" />
               </div>
 
               <div className="form-group">
-                <label htmlFor="pat-nombre" className="form-label">Nombre de la unidad <span style={{ color: '#C62828' }}>*</span></label>
-                <input
-                  id="pat-nombre" required
-                  value={formData.nombre}
-                  onChange={e => setFormData({ ...formData, nombre: e.target.value })}
-                  className="form-input" aria-required="true"
-                  placeholder="Unidad Alpha, Ambulancia 1..."
-                />
+                <label htmlFor="pat-placa" className="form-label">Placa</label>
+                <input id="pat-placa" value={formData.placa} onChange={e => setFormData({ ...formData, placa: e.target.value })} className="form-input" placeholder="Ej. EGA-342" />
+              </div>
+
+              <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: '#334155' }}>👤 Datos del Encargado</h3>
+                <div className="form-group">
+                  <label htmlFor="pat-nombre" className="form-label">Nombre del Personal <span style={{ color: '#C62828' }}>*</span></label>
+                  <input id="pat-nombre" required value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} className="form-input" placeholder="Ej. Juan Perez" />
+                </div>
+                <div className="form-group" style={{ marginTop: '12px' }}>
+                  <label htmlFor="pat-cip" className="form-label">Identificador (CIP, DNI, etc)</label>
+                  <input id="pat-cip" value={formData.cip} onChange={e => setFormData({ ...formData, cip: e.target.value })} className="form-input" placeholder="Opcional" />
+                </div>
               </div>
 
               <div className="form-group">
                 <label htmlFor="pat-turno" className="form-label">Turno</label>
-                <select
-                  id="pat-turno"
-                  value={formData.turno}
-                  onChange={e => setFormData({ ...formData, turno: e.target.value })}
-                  className="form-select"
-                >
-                  {TURNO_OPTIONS.map(t => (
-                    <option key={t} value={t}>{t === 'DIA' ? '☀️ Día' : '🌙 Noche'}</option>
-                  ))}
+                <select id="pat-turno" value={formData.turno} onChange={e => setFormData({ ...formData, turno: e.target.value })} className="form-select">
+                  {TURNO_OPTIONS.map(t => <option key={t} value={t}>{t === 'DIA' ? '☀️ Día' : '🌙 Noche'}</option>)}
                 </select>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="pat-email" className="form-label">Correo electrónico (acceso a la app) <span style={{ color: '#C62828' }}>*</span></label>
-                <input
-                  id="pat-email" type="email" required
-                  value={formData.email}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  className="form-input" aria-required="true"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="pat-password" className="form-label">Contraseña <span style={{ color: '#C62828' }}>*</span></label>
-                <input
-                  id="pat-password" type="password" required
-                  value={formData.password}
-                  onChange={e => setFormData({ ...formData, password: e.target.value })}
-                  className="form-input" minLength={6} aria-required="true"
-                />
-                <small style={{ color: '#888' }}>Mínimo 6 caracteres</small>
-              </div>
+              {/* Autenticación (Solo visible al crear) */}
+              {!isEditing && (
+                <div style={{ padding: '1rem', background: '#fff7ed', borderRadius: '8px', border: '1px solid #ffedd5' }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', color: '#9a3412' }}>🔐 Credenciales de Acceso</h3>
+                  <div className="form-group">
+                    <label htmlFor="pat-email" className="form-label">Correo electrónico <span style={{ color: '#C62828' }}>*</span></label>
+                    <input id="pat-email" type="email" required={!isEditing} value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="form-input" disabled={isEditing} />
+                  </div>
+                  <div className="form-group" style={{ marginTop: '12px' }}>
+                    <label htmlFor="pat-password" className="form-label">Contraseña <span style={{ color: '#C62828' }}>*</span></label>
+                    <input id="pat-password" type="password" required={!isEditing} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="form-input" minLength={6} disabled={isEditing} />
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '1rem' }}>
-                <button type="button" disabled={isSubmitting} onClick={() => { setShowModal(false); setErrorMsg(null); }} className="btn btn--ghost">
-                  Cancelar
-                </button>
-                <button
-                  type="submit" disabled={isSubmitting}
-                  className="btn btn--primary"
-                  aria-busy={isSubmitting}
-                  style={{ opacity: isSubmitting ? 0.7 : 1 }}
-                >
-                  {isSubmitting ? 'Guardando...' : 'Crear Unidad'}
+                <button type="button" disabled={isSubmitting} onClick={() => setShowModal(false)} className="btn btn--ghost">Cancelar</button>
+                <button type="submit" disabled={isSubmitting} className="btn btn--primary" style={{ opacity: isSubmitting ? 0.7 : 1 }}>
+                  {isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Crear Unidad')}
                 </button>
               </div>
             </form>

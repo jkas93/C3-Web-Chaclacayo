@@ -195,7 +195,7 @@ export const HistorialPage = () => {
               <tbody>
                 {emergencias.map((e) => {
                   const patInfo = patrulleros.find(p => p.uid === e.patrullaAsignadaId);
-                  const patDisplay = patInfo ? `${patInfo.nombre} (${patInfo.codigo})` : (e.patrullaAsignadaId || '—');
+                  const patDisplay = patInfo ? `${patInfo.nombre}` : (e.patrullaAsignadaId || '—');
                   const vecinoDisplay = e.vecinoNombre
                     ? `${e.vecinoNombre}${e.vecinoDni ? ` (${e.vecinoDni})` : ''}`
                     : (e.vecinoId?.substring(0, 10) || '—');
