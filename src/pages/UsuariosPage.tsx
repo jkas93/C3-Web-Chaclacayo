@@ -2,21 +2,22 @@ import { useState } from 'react';
 import { useUsuarios } from '../hooks/useUsuarios';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { functions, db } from '../services/firebase';
+import { functions } from '../services/firebase';
+import type { Usuario } from '../types/Usuario';
 
-async function hashPin(pin: string, dni: string): Promise<string> {
-  const combined = `${dni}:${pin}`;
-  const msgBuffer = new TextEncoder().encode(combined);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
 
 export const UsuariosPage = () => {
   const { usuarios, loading } = useUsuarios();
   const { isAdmin } = useAuth();
   const [resettingDni, setResettingDni] = useState<string | null>(null);
+  const [provisioningDni, setProvisioningDni] = useState<string | null>(null);
+  const [isProvisionOpen, setIsProvisionOpen] = useState(false);
+  const [provisionForm, setProvisionForm] = useState({ dni: '', claveTemporal: '', confirmarClave: '' });
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [provisionNotice, setProvisionNotice] = useState<string | null>(null);
+  const [deactivatingDni, setDeactivatingDni] = useState<string | null>(null);
   const [confirmDni, setConfirmDni] = useState<string | null>(null);
 
   // --- REGISTRO STATE ---
@@ -24,7 +25,7 @@ export const UsuariosPage = () => {
   const [regForm, setRegForm] = useState({ 
     nombre: '', dni: '', telefono: '', direccion: '', 
     correo: '', fechaNacimiento: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
-    pinNormal: '', pinCoaccion: '' 
+    claveTemporal: '', pinNormal: '', pinCoaccion: ''
   });
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
@@ -43,9 +44,9 @@ export const UsuariosPage = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
-    const { nombre, dni, telefono, direccion, correo, fechaNacimiento, contactoEmergenciaNombre, contactoEmergenciaTelefono, pinNormal, pinCoaccion } = regForm;
+    const { nombre, dni, telefono, direccion, correo, fechaNacimiento, contactoEmergenciaNombre, contactoEmergenciaTelefono, claveTemporal, pinNormal, pinCoaccion } = regForm;
 
-    if (!nombre.trim() || !dni.trim() || !telefono.trim() || !direccion.trim() || !pinNormal.trim() || !pinCoaccion.trim()) {
+    if (!nombre.trim() || !dni.trim() || !telefono.trim() || !direccion.trim() || !claveTemporal.trim() || !pinNormal.trim() || !pinCoaccion.trim()) {
       return setRegError('Complete los campos obligatorios (*)');
     }
     if (dni.trim().length < 8) return setRegError('DNI inválido');
@@ -53,34 +54,15 @@ export const UsuariosPage = () => {
     if (pinNormal.length !== 4 || pinCoaccion.length !== 4) return setRegError('Los PINs deben ser exactamente de 4 dígitos');
     if (pinNormal === pinCoaccion) return setRegError('El PIN de coacción debe ser distinto al normal');
 
+    if (claveTemporal.length < 8) return setRegError('La clave temporal debe tener al menos 8 caracteres');
+
     setRegLoading(true);
     try {
-      const cleanDni = dni.trim();
-      const userRef = doc(db, 'usuarios', cleanDni);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        throw new Error('Este DNI ya se encuentra registrado');
-      }
-
-      const hashedNormal = await hashPin(pinNormal.trim(), cleanDni);
-      const hashedCoaccion = await hashPin(pinCoaccion.trim(), cleanDni);
-      
-      const newUserId = crypto.randomUUID();
-
-      await setDoc(userRef, {
-        uid: newUserId,
-        nombre: nombre.trim(),
-        dni: cleanDni,
-        telefono: telefono.trim(),
-        direccion: direccion.trim(),
-        correo: correo.trim(),
-        fechaNacimiento: fechaNacimiento.trim(),
-        contactoEmergenciaNombre: contactoEmergenciaNombre.trim(),
-        contactoEmergenciaTelefono: contactoEmergenciaTelefono.trim(),
-        pinNormal: hashedNormal,
-        pinCoaccion: hashedCoaccion,
-        deviceId: "", 
-        creadoEnMs: Date.now()
+      const crearVecino = httpsCallable(functions, 'crearVecino');
+      await crearVecino({
+        nombre, dni, telefono, direccion, correo, fechaNacimiento,
+        contactoEmergenciaNombre, contactoEmergenciaTelefono,
+        claveTemporal, pinNormal, pinCoaccion
       });
 
       alert('✅ Vecino registrado correctamente.');
@@ -88,17 +70,17 @@ export const UsuariosPage = () => {
       setRegForm({ 
         nombre: '', dni: '', telefono: '', direccion: '', 
         correo: '', fechaNacimiento: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
-        pinNormal: '', pinCoaccion: '' 
+        claveTemporal: '', pinNormal: '', pinCoaccion: ''
       });
-    } catch (err: any) {
-      setRegError(err.message || 'Error al registrar al vecino');
+    } catch (err: unknown) {
+      setRegError(getErrorMessage(err, 'Error al registrar al vecino'));
     } finally {
       setRegLoading(false);
     }
   };
 
   // --- MANEJADOR PARA ABRIR EDICIÓN ---
-  const openEditModal = (u: any) => {
+  const openEditModal = (u: Usuario) => {
     setEditError(null);
     setEditForm({
       dni: u.dni,
@@ -127,21 +109,16 @@ export const UsuariosPage = () => {
 
     setEditLoading(true);
     try {
-      const userRef = doc(db, 'usuarios', dni);
-      await updateDoc(userRef, {
-        nombre: nombre.trim(),
-        telefono: telefono.trim(),
-        direccion: direccion.trim(),
-        correo: correo.trim(),
-        fechaNacimiento: fechaNacimiento.trim(),
-        contactoEmergenciaNombre: contactoEmergenciaNombre.trim(),
-        contactoEmergenciaTelefono: contactoEmergenciaTelefono.trim(),
+      const editarVecino = httpsCallable(functions, 'editarVecino');
+      await editarVecino({
+        dni, nombre, telefono, direccion, correo, fechaNacimiento,
+        contactoEmergenciaNombre, contactoEmergenciaTelefono
       });
 
       alert('✅ Vecino actualizado correctamente.');
       setIsEditOpen(false);
-    } catch (err: any) {
-      setEditError(err.message || 'Error al actualizar al vecino');
+    } catch (err: unknown) {
+      setEditError(getErrorMessage(err, 'Error al actualizar al vecino'));
     } finally {
       setEditLoading(false);
     }
@@ -159,6 +136,59 @@ export const UsuariosPage = () => {
       alert(`❌ Error: ${(error instanceof Error ? error.message : String(error)) || 'No se pudo resetear el dispositivo.'}`);
     } finally {
       setResettingDni(null);
+    }
+  };
+
+  const openProvisionModal = (dni: string) => {
+    setProvisionError(null);
+    setProvisionForm({ dni, claveTemporal: '', confirmarClave: '' });
+    setIsProvisionOpen(true);
+  };
+
+  const handleProvisionarAcceso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { dni, claveTemporal, confirmarClave } = provisionForm;
+    setProvisionError(null);
+    setProvisionNotice(null);
+    if (claveTemporal.length < 8 || claveTemporal.length > 128) {
+      return setProvisionError('La clave temporal debe tener entre 8 y 128 caracteres.');
+    }
+    if (/\s/.test(claveTemporal)) {
+      return setProvisionError('La clave temporal no puede contener espacios.');
+    }
+    if (claveTemporal !== confirmarClave) {
+      return setProvisionError('Las claves temporales no coinciden.');
+    }
+
+    setProvisioningDni(dni);
+    try {
+      const provisionar = httpsCallable(functions, 'provisionarAccesoVecino');
+      await provisionar({ dni, claveTemporal });
+      setIsProvisionOpen(false);
+      setProvisionForm({ dni: '', claveTemporal: '', confirmarClave: '' });
+      setProvisionNotice(`Acceso de ${dni} provisionado. Entregue la clave temporal personalmente al vecino.`);
+    } catch (error) {
+      console.error('Error provisionando acceso:', error);
+      setProvisionError(error instanceof Error ? error.message : 'No se pudo provisionar el acceso.');
+    } finally {
+      setProvisioningDni(null);
+    }
+  };
+
+  const handleDesactivarVecino = async (dni: string) => {
+    const motivo = window.prompt('Indique el motivo de desactivación (obligatorio):')?.trim() || '';
+    if (motivo.length < 5) return;
+    if (!window.confirm(`Se bloqueará el acceso del vecino ${dni}. ¿Desea continuar?`)) return;
+    setDeactivatingDni(dni);
+    try {
+      const desactivar = httpsCallable(functions, 'desactivarVecino');
+      await desactivar({ dni, motivo });
+      alert('Vecino desactivado y acceso bloqueado correctamente.');
+    } catch (error) {
+      console.error('Error desactivando vecino:', error);
+      alert(error instanceof Error ? error.message : 'No se pudo desactivar al vecino.');
+    } finally {
+      setDeactivatingDni(null);
     }
   };
 
@@ -246,12 +276,33 @@ export const UsuariosPage = () => {
                         <span style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <button
                             className="btn btn--ghost"
+                            style={{ fontSize: '0.75rem', padding: '4px 8px', borderColor: '#6A1B9A', color: '#6A1B9A' }}
+                            onClick={() => openProvisionModal(u.dni)}
+                            disabled={provisioningDni === u.dni}
+                            title="Crear o restablecer la clave de acceso"
+                          >
+                            {provisioningDni === u.dni ? 'Procesando...' : 'Clave acceso'}
+                          </button>
+                          <button
+                            className="btn btn--ghost"
                             style={{ fontSize: '0.75rem', padding: '4px 8px', borderColor: '#1976d2', color: '#1976d2' }}
                             onClick={() => openEditModal(u)}
                             title="Editar datos del vecino"
                           >
                             ✏️ Editar
                           </button>
+
+                          {u.activo !== false && (
+                            <button
+                              className="btn btn--ghost"
+                              style={{ fontSize: '0.75rem', padding: '4px 8px', borderColor: '#C62828', color: '#C62828' }}
+                              onClick={() => handleDesactivarVecino(u.dni)}
+                              disabled={deactivatingDni === u.dni}
+                              title="Desactivar cuenta y bloquear el acceso"
+                            >
+                              {deactivatingDni === u.dni ? 'Desactivando...' : 'Desactivar'}
+                            </button>
+                          )}
 
                           {u.deviceId && (
                             confirmDni === u.dni ? (
@@ -301,6 +352,12 @@ export const UsuariosPage = () => {
           </div>
         )}
       </div>
+
+      {provisionNotice && (
+        <div role="status" style={{ background: '#E8F5E9', color: '#1B5E20', padding: '10px 14px', borderRadius: '4px', marginBottom: '12px' }}>
+          {provisionNotice}
+        </div>
+      )}
 
       {/* --- MODAL REGISTRAR --- */}
       {isRegisterOpen && (
@@ -357,6 +414,20 @@ export const UsuariosPage = () => {
                 </div>
               </div>
 
+              <div className="form-group">
+                <label className="form-label">Clave temporal de acceso (*)</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  minLength={8}
+                  value={regForm.claveTemporal}
+                  onChange={e => setRegForm({...regForm, claveTemporal: e.target.value})}
+                  placeholder="Mínimo 8 caracteres"
+                  required
+                />
+                <small>Entréguela personalmente al vecino; no se almacena en el navegador.</small>
+              </div>
+
               {/* PINS */}
               <h3 style={{ fontSize: '1rem', color: '#d32f2f', borderBottom: '1px solid #e0e0e0', paddingBottom: '4px', marginBottom: '12px', marginTop: '8px' }}>Seguridad de Pines (*)</h3>
               <div style={{ display: 'flex', gap: '16px' }}>
@@ -375,6 +446,69 @@ export const UsuariosPage = () => {
                   {regLoading ? 'Registrando...' : 'Registrar Vecino'}
                 </button>
                 <button type="button" className="btn btn--ghost" style={{ flex: 1 }} onClick={() => setIsRegisterOpen(false)} disabled={regLoading}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL PROVISIONAR ACCESO --- */}
+      {isProvisionOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="provision-access-title" style={{ width: '460px', maxWidth: 'calc(100vw - 32px)' }}>
+            <h2 id="provision-access-title">Crear clave temporal</h2>
+            <p style={{ color: 'var(--c3-text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>
+              Vecino con DNI {provisionForm.dni}. La clave se invalidará cuando el vecino cree su clave personal.
+            </p>
+            {provisionError && (
+              <div role="alert" style={{ background: '#FFEBEE', color: '#C62828', padding: '10px', borderRadius: '4px', marginBottom: '16px', fontSize: '0.9rem' }}>
+                {provisionError}
+              </div>
+            )}
+            <form onSubmit={handleProvisionarAcceso}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="provision-access-key">Nueva clave temporal</label>
+                <input
+                  id="provision-access-key"
+                  className="form-input"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  value={provisionForm.claveTemporal}
+                  onChange={e => setProvisionForm({ ...provisionForm, claveTemporal: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="provision-access-key-confirm">Confirmar clave temporal</label>
+                <input
+                  id="provision-access-key-confirm"
+                  className="form-input"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  maxLength={128}
+                  value={provisionForm.confirmarClave}
+                  onChange={e => setProvisionForm({ ...provisionForm, confirmarClave: e.target.value })}
+                  required
+                />
+              </div>
+              <small>Entréguela personalmente; la consola no la almacenará ni volverá a mostrarla.</small>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '24px' }}>
+                <button type="submit" className="btn btn--primary" style={{ flex: 1 }} disabled={provisioningDni !== null}>
+                  {provisioningDni ? 'Provisionando...' : 'Confirmar acceso'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ flex: 1 }}
+                  onClick={() => setIsProvisionOpen(false)}
+                  disabled={provisioningDni !== null}
+                >
                   Cancelar
                 </button>
               </div>

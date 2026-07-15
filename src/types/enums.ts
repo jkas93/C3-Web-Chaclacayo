@@ -26,11 +26,13 @@ export type RolOperador = typeof RolOperador[keyof typeof RolOperador];
 // Estados de una emergencia
 export const EstadoEmergencia = {
   PENDIENTE:  'PENDIENTE',
+  PENDIENTE_SIN_UNIDAD: 'PENDIENTE_SIN_UNIDAD',
   DESPACHADA: 'DESPACHADA',
   EN_SITIO:   'EN_SITIO',
   RESUELTA:   'RESUELTA',
   COACCION:   'COACCION',
   CANCELADA:  'CANCELADA',
+  ESCALADA:   'ESCALADA',
 } as const;
 export type EstadoEmergencia = typeof EstadoEmergencia[keyof typeof EstadoEmergencia];
 

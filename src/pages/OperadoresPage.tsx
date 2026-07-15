@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { functions, db } from '../services/firebase';
 import { RolOperador, SERVICIO_CONFIG } from '../types/enums';
 import type { OperadorC3 } from '../types/Usuario';
@@ -28,8 +28,7 @@ export const OperadoresPage = () => {
 
   // Cargar operadores en tiempo real
   useEffect(() => {
-    const q = query(collection(db, 'operadores_c3'), orderBy('creadoEn', 'desc'));
-    const unsub = onSnapshot(q, snap => {
+    const unsub = onSnapshot(collection(db, 'operadores_c3'), snap => {
       setOperadores(snap.docs.map(d => ({ uid: d.id, ...d.data() } as OperadorC3)));
       setLoading(false);
     });

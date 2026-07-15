@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { SERVICIO_CONFIG } from '../types/enums';
 import { useEmergencias } from '../hooks/useEmergencias';
+import { useAlertasOperativas } from '../hooks/useAlertasOperativas';
+import { AlertasSlaBanner } from './AlertasSlaBanner';
 import {
   Map, AlertTriangle, Car, Users, History,
   Shield, LogOut, Menu, X, ChevronDown, User
@@ -162,6 +164,7 @@ export const Layout = () => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { emergencias } = useEmergencias(rol);
+  const { alertas: alertasSla, error: alertasSlaError } = useAlertasOperativas(rol);
 
   const pendientesCount = emergencias.filter(e => e.estado === 'PENDIENTE').length;
 
@@ -175,7 +178,7 @@ export const Layout = () => {
     { path: '/',            label: 'Mapa Táctico', id: 'nav-map',         icon: <Map size={20} /> },
     { path: '/emergencias', label: 'Incidentes',   id: 'nav-emergencias', icon: <AlertTriangle size={20} />, count: pendientesCount },
     { path: '/patrulleros', label: 'Unidades',     id: 'nav-patrulleros', icon: <Car size={20} /> },
-    { path: '/usuarios',    label: 'Vecinos',      id: 'nav-usuarios',    icon: <Users size={20} /> },
+    ...(isAdmin ? [{ path: '/usuarios', label: 'Vecinos', id: 'nav-usuarios', icon: <Users size={20} /> }] : []),
     { path: '/historial',   label: 'Historial',    id: 'nav-historial',   icon: <History size={20} /> },
     ...(isAdmin ? [{ path: '/operadores', label: 'Operadores', id: 'nav-operadores', icon: <Shield size={20} /> }] : []),
   ];
@@ -256,6 +259,7 @@ export const Layout = () => {
         <main id="main-content" className="app-main" role="main" tabIndex={-1}>
           <C3Transition show key={location.pathname} preset="fadeSlideUp">
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <AlertasSlaBanner alertas={alertasSla} error={alertasSlaError} />
               <Outlet />
             </div>
           </C3Transition>

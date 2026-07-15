@@ -26,3 +26,11 @@ dist-ssr
 *.sln
 *.sw?
 serviceAccountKey.json
+.firebase-config/
+.firebase-emulators/
+firestore-debug.log
+database-debug.log
+storage-debug.log
+firebase-debug.log
+functions/.migration-reports/
+.vercel/

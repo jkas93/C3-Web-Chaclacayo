@@ -17,6 +17,10 @@ export interface Emergencia {
   patrullaApoyoId?: string | null;
   alertaWebSilenciada?: boolean;
   timestampMs: number;
+  prioridad?: 'P1' | 'P2' | 'P3';
+  esCoaccion?: boolean;
+  requiereEscalamiento?: boolean;
+  motivoPendiente?: string;
   
   // ⏱️ SLA y Tiempos
   horaAsignacionMs?: number;

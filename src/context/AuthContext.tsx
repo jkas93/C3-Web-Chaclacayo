@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../services/firebase';
 import type { RolOperador } from '../types/enums';
 
 interface AuthContextType {
@@ -63,7 +64,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    await httpsCallable(functions, 'sincronizarClaimsSesion')();
+    await credential.user.getIdToken(true);
   };
 
   const logout = async () => {

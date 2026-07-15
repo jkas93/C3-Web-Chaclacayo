@@ -26,7 +26,14 @@ function App() {
                 <Route index element={<MapPage />} />
                 <Route path="emergencias" element={<TablePage />} />
                 <Route path="patrulleros" element={<PatrullerosPage />} />
-                <Route path="usuarios" element={<UsuariosPage />} />
+                <Route
+                  path="usuarios"
+                  element={
+                    <ProtectedRoute allowedRoles={['ADMIN']}>
+                      <UsuariosPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route path="historial" element={<HistorialPage />} />
                 <Route 
                   path="operadores" 

@@ -11,6 +11,8 @@ export interface Usuario {
   tokenFCM: string;
   deviceId?: string;          // UUID del dispositivo registrado (vacío = sin dispositivo vinculado)
   creadoEnMs: number;
+  activo?: boolean;
+  desactivadoEnMs?: number;
 }
 
 export interface OperadorC3 {

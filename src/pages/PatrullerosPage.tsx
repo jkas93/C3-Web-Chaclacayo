@@ -3,21 +3,26 @@ import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
 import { httpsCallable } from 'firebase/functions';
 import { functions, db } from '../services/firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { SERVICIO_CONFIG, TipoServicio } from '../types/enums';
+import type { Patrullero } from '../types/Patrullero';
 
 export const PublicLinkManager = ({ rol }: { rol: string }) => {
-  const [activeLink, setActiveLink] = useState<{ id: string } | null>(null);
+  const [activeLink, setActiveLink] = useState<{ id: string; expiresAtMs: number } | null>(null);
 
   useEffect(() => {
     if (rol !== 'ADMIN') return;
     const q = query(collection(db, 'enlaces_publicos'), where('activo', '==', true));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        setActiveLink({ id: snapshot.docs[0].id });
-      } else {
-        setActiveLink(null);
-      }
+      const now = Date.now();
+      const vigente = snapshot.docs
+        .map(document => ({
+          id: document.id,
+          expiresAtMs: Number(document.data().expiresAtMs || 0),
+        }))
+        .filter(enlace => Number.isFinite(enlace.expiresAtMs) && enlace.expiresAtMs > now)
+        .sort((a, b) => b.expiresAtMs - a.expiresAtMs)[0] ?? null;
+      setActiveLink(vigente);
     });
     return () => unsubscribe();
   }, [rol]);
@@ -26,11 +31,10 @@ export const PublicLinkManager = ({ rol }: { rol: string }) => {
 
   const handleGenerate = async () => {
     try {
-      const docRef = await addDoc(collection(db, 'enlaces_publicos'), {
-        activo: true,
-        createdAt: Date.now()
-      });
-      const url = `${window.location.origin}/publico/${docRef.id}`;
+      const gestionarEnlace = httpsCallable(functions, 'gestionarEnlacePublico');
+      const response = await gestionarEnlace({ accion: 'CREAR' });
+      const token = (response.data as { token: string }).token;
+      const url = `${window.location.origin}/publico/${token}`;
       await navigator.clipboard.writeText(url);
       alert(`Enlace generado y copiado:\n${url}`);
     } catch (e) {
@@ -40,9 +44,10 @@ export const PublicLinkManager = ({ rol }: { rol: string }) => {
   };
 
   const handleRevoke = async () => {
-    if (!activeLink) return;
+    if (!activeLink || !window.confirm('¿Desea revocar el enlace público activo?')) return;
     try {
-      await updateDoc(doc(db, 'enlaces_publicos', activeLink.id), { activo: false });
+      const gestionarEnlace = httpsCallable(functions, 'gestionarEnlacePublico');
+      await gestionarEnlace({ accion: 'REVOCAR', token: activeLink.id });
       alert('El enlace ha sido caducado. Ya no se podrá acceder al mapa público con él.');
     } catch (e) {
       console.error(e);
@@ -129,7 +134,7 @@ export const PatrullerosPage = () => {
     setShowModal(true);
   };
 
-  const openEditModal = (p: any) => {
+  const openEditModal = (p: Patrullero) => {
     setFormData({
       nombre: p.nombre,
       unidad: p.unidad || '',

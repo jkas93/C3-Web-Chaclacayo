@@ -1,0 +1,24 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "tracking": {
+      "patrulleros": {
+        ".read": "auth != null && (auth.token.role == 'ADMIN' || auth.token.role == 'POLICIA' || auth.token.role == 'SALUD' || auth.token.role == 'BOMBEROS')",
+        "$uid": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid && auth.token.role == 'PATRULLERO'",
+          ".validate": "newData.hasChildren(['latitud', 'longitud', 'ultimaActualizacion']) && newData.child('latitud').isNumber() && newData.child('longitud').isNumber() && newData.child('ultimaActualizacion').isNumber()"
+        }
+      },
+      "emergencias": {
+        ".read": "auth != null && (auth.token.role == 'ADMIN' || auth.token.role == 'POLICIA' || auth.token.role == 'SALUD' || auth.token.role == 'BOMBEROS')",
+        "$emergenciaId": {
+          ".read": "auth != null && data.child('vecinoId').val() == auth.uid",
+          ".write": "auth != null && auth.token.role == 'VECINO' && newData.child('vecinoId').val() == auth.uid",
+          ".validate": "newData.hasChildren(['latitud', 'longitud', 'vecinoId', 'ultimaActualizacion']) && newData.child('latitud').isNumber() && newData.child('longitud').isNumber() && newData.child('vecinoId').isString() && newData.child('ultimaActualizacion').isNumber()"
+        }
+      }
+    }
+  }
+}

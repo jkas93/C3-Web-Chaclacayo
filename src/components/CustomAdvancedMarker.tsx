@@ -12,35 +12,39 @@ export const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, anim
   const map = useGoogleMap();
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const initialPositionRef = useRef(position);
   
   const currentPosRef = useRef<google.maps.LatLngLiteral>(position);
   const targetPosRef = useRef<google.maps.LatLngLiteral>(position);
   const rafRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const ANIM_DURATION = 800; 
-
-  if (!containerRef.current) {
-    containerRef.current = document.createElement('div');
-    containerRef.current.style.transform = 'translate(0, 50%)';
-    containerRef.current.style.cursor = onClick ? 'pointer' : 'default';
-  }
+  const positionLat = position.lat;
+  const positionLng = position.lng;
 
   // Update HTML content
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.innerHTML = iconData.htmlContent;
-    }
+    if (containerRef.current) containerRef.current.innerHTML = iconData.htmlContent;
   }, [iconData.htmlContent]);
+
+  useEffect(() => {
+    if (containerRef.current) containerRef.current.style.cursor = onClick ? 'pointer' : 'default';
+  }, [onClick]);
 
   // Create & Teardown Marker
   useEffect(() => {
     if (!map) return;
-    currentPosRef.current = position;
-    targetPosRef.current = position;
+    const container = document.createElement('div');
+    container.style.transform = 'translate(0, 50%)';
+    container.style.cursor = onClick ? 'pointer' : 'default';
+    container.innerHTML = iconData.htmlContent;
+    containerRef.current = container;
+    currentPosRef.current = initialPositionRef.current;
+    targetPosRef.current = initialPositionRef.current;
     markerRef.current = new google.maps.marker.AdvancedMarkerElement({
       map,
-      position,
-      content: containerRef.current,
+      position: currentPosRef.current,
+      content: container,
       zIndex
     });
     return () => {
@@ -49,19 +53,23 @@ export const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, anim
         markerRef.current.map = null;
         markerRef.current = null;
       }
+      containerRef.current = null;
     };
+    // Los cambios posteriores de contenido, click y z-index tienen efectos dedicados.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map]);
 
   // Interpolación suave al cambiar posición
   useEffect(() => {
     if (!markerRef.current) return;
+    const nextPosition = { lat: positionLat, lng: positionLng };
     if (!animate) {
-      markerRef.current.position = position;
-      currentPosRef.current = position;
+      markerRef.current.position = nextPosition;
+      currentPosRef.current = nextPosition;
       return;
     }
     const from = { ...currentPosRef.current };
-    targetPosRef.current = position;
+    targetPosRef.current = nextPosition;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     startTimeRef.current = null;
 
@@ -83,11 +91,9 @@ export const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, anim
         // Rotar el carrito hacia la dirección en la que se mueve
         if (Math.abs(targetPosRef.current.lat - from.lat) > 0.000005 || Math.abs(targetPosRef.current.lng - from.lng) > 0.000005) {
           const bearing = calculateBearing(from.lat, from.lng, targetPosRef.current.lat, targetPosRef.current.lng);
-          if (containerRef.current) {
-            const rotationContainer = containerRef.current.querySelector('.marker-rotation-container') as HTMLElement;
-            if (rotationContainer) {
-              rotationContainer.style.transform = `rotate(${bearing}deg)`;
-            }
+          const rotationContainer = containerRef.current?.querySelector('.marker-rotation-container') as HTMLElement | undefined;
+          if (rotationContainer) {
+            rotationContainer.style.transform = `rotate(${bearing}deg)`;
           }
         }
       }
@@ -98,7 +104,7 @@ export const CustomAdvancedMarker = ({ position, iconData, zIndex, onClick, anim
     };
 
     rafRef.current = requestAnimationFrame(step);
-  }, [position.lat, position.lng, animate]);
+  }, [positionLat, positionLng, animate]);
 
   // Update Z-Index
   useEffect(() => {

@@ -1,73 +1,56 @@
-# React + TypeScript + Vite
+# Web-C3 Chaclacayo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Centro de Comando y Control para administrar emergencias de Policía, Salud y
+Bomberos. La aplicación web usa React, TypeScript, Vite y Firebase.
 
-Currently, two official plugins are available:
+## Requisitos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 22.x
+- npm
+- Un proyecto Firebase configurado
+- Una clave de Google Maps restringida por dominio
 
-## React Compiler
+## Desarrollo local
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Copiar `.env.example` como `.env`.
+2. Completar las variables sin versionar el archivo.
+3. Instalar y validar:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```powershell
+npm ci
+npm run lint
+npm run build
+npm run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Despliegue mediante GitHub y Vercel
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+El repositorio incluye `vercel.json` con el build de Vite, salida `dist`, rutas
+SPA y cabeceras básicas de seguridad. En Vercel deben existir, para Production y
+Preview, estas variables:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_GOOGLE_MAPS_API_KEY
+VITE_DEV_MODE=false
 ```
+
+El build se detiene si falta una variable obligatoria. Después del primer
+despliegue, el dominio asignado por Vercel debe agregarse a los dominios
+autorizados de Firebase Authentication y a las restricciones HTTP de la clave de
+Google Maps.
+
+No deben subirse `.env`, llaves de servicio, reportes de migración, logs,
+keystores ni datos personales. Las variables `VITE_*` forman parte del bundle del
+navegador; no deben contener credenciales administrativas.
+
+## Firebase backend
+
+El directorio `functions/`, las reglas y los índices se despliegan mediante
+Firebase CLI en una ventana controlada. Vercel publica únicamente el frontend y
+no reemplaza el despliegue del backend Firebase.

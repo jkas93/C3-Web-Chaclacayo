@@ -3,8 +3,9 @@ import { useJsApiLoader, GoogleMap, DirectionsService, DirectionsRenderer, Polyg
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../services/firebase';
-import { doc, updateDoc, addDoc, collection, onSnapshot } from 'firebase/firestore';
+import { db, functions } from '../services/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { EstadoEmergencia, EstadoPatrullero } from '../types/enums';
 import { AlertaCoaccion } from './AlertaCoaccion';
 import type { Emergencia } from '../types/Emergencia';
@@ -28,8 +29,14 @@ const options: google.maps.MapOptions = {
   mapId: "DEMO_MAP_ID"
 };
 
-const ACTIVE_STATES = ['PENDIENTE', 'DESPACHADA', 'COACCION'] as const;
+const ACTIVE_STATES = ['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'DESPACHADA', 'COACCION', 'ESCALADA'] as const;
 const CENTER_POSITION = { lat: -11.9765, lng: -76.7725 };
+
+interface Cuadrante {
+  id: string;
+  nombre: string;
+  path: google.maps.LatLngLiteral[];
+}
 
 const MapDashboardInner = () => {
   const { isLoaded, loadError } = useJsApiLoader({
@@ -38,7 +45,7 @@ const MapDashboardInner = () => {
     libraries
   });
 
-  const { rol } = useAuth();
+  const { rol, isAdmin } = useAuth();
   const { emergencias } = useEmergencias(rol);
   const { patrulleros } = usePatrulleros(rol);
 
@@ -48,7 +55,7 @@ const MapDashboardInner = () => {
   const [shouldFetchDirections, setShouldFetchDirections] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const [cuadrantes, setCuadrantes] = useState<any[]>([]);
+  const [cuadrantes, setCuadrantes] = useState<Cuadrante[]>([]);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [draftPolygon, setDraftPolygon] = useState<{lat: number, lng: number}[]>([]);
 
@@ -56,7 +63,7 @@ const MapDashboardInner = () => {
     const unsub = onSnapshot(
       collection(db, 'cuadrantes'), 
       snap => {
-        setCuadrantes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setCuadrantes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuadrante)));
       },
       err => {
         console.warn("No se pudieron cargar los cuadrantes (posible falta de permisos):", err.message);
@@ -79,10 +86,9 @@ const MapDashboardInner = () => {
     }
     const name = window.prompt('Ingrese el nombre del cuadrante (ej. Cuadrante Alfa):');
     if (name) {
-      addDoc(collection(db, 'cuadrantes'), {
-        nombre: name,
-        path: draftPolygon
-      }).catch(err => console.error("Error al guardar cuadrante", err));
+      const crearCuadrante = httpsCallable(functions, 'crearCuadrante');
+      crearCuadrante({ nombre: name, path: draftPolygon })
+        .catch(err => console.error("Error al guardar cuadrante", err));
     }
     setIsDrawingMode(false);
     setDraftPolygon([]);
@@ -198,7 +204,7 @@ const MapDashboardInner = () => {
       patrullerosTotal: patrulleros.length,
       avgResponseMin: Math.round(avgResponseMs / 60000)
     };
-  }, [emergencias, patrulleros, now]);
+  }, [emergencias, patrulleros]);
 
   const directionsCallback = useCallback((response: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
     if (status === 'OK' && response !== null) {
@@ -216,7 +222,8 @@ const MapDashboardInner = () => {
         // Escribir etaMinutos a Firebase para el live tracking
         if (selectedEmergenciaId && leg.duration?.value) {
           const etaMin = Math.round(leg.duration.value / 60);
-          updateDoc(doc(db, 'emergencias', selectedEmergenciaId), { etaMinutos: etaMin })
+          const gestionarEmergencia = httpsCallable(functions, 'gestionarEmergencia');
+          gestionarEmergencia({ emergenciaId: selectedEmergenciaId, accion: 'ACTUALIZAR_ETA', etaMinutos: etaMin })
             .catch(err => console.error("Error actualizando ETA:", err));
         }
       }
@@ -532,7 +539,7 @@ const MapDashboardInner = () => {
         </GoogleMap>
 
         {/* Botones de Dibujo */}
-        {isDrawingMode && draftPolygon.length >= 3 && (
+        {isAdmin && isDrawingMode && draftPolygon.length >= 3 && (
           <button
             onClick={onPolygonComplete}
             className="desktop-only"
@@ -555,7 +562,7 @@ const MapDashboardInner = () => {
           </button>
         )}
         
-        <button
+        {isAdmin && <button
           onClick={() => {
             setIsDrawingMode(!isDrawingMode);
             setDraftPolygon([]);
@@ -577,7 +584,7 @@ const MapDashboardInner = () => {
           }}
         >
           {isDrawingMode ? '✕ Cancelar Dibujo' : '✎ Dibujar Cuadrante'}
-        </button>
+        </button>}
 
         {/* ── Lista de emergencias activas (sidebar flotante) ── */}
         {emergenciasFiltradas.filter(e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA').length > 0 && (

@@ -45,10 +45,6 @@ export function getEmergenciaIcon(tipo: string, isSelected: boolean, isCoac: boo
 
 export function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigned: boolean = false) {
   const size = isAssigned ? 56 : 44;
-  let htmlContent: string;
-
-
-
   let imgSource = '/patrulla_v3.png';
   if (tipoServicio === 'SALUD') {
     imgSource = '/ambulancia.png';
@@ -56,7 +52,7 @@ export function getUnidadIcon(tipoServicio: string, isActive: boolean, isAssigne
     imgSource = '/bomberos.png';
   }
 
-  htmlContent = `
+  const htmlContent = `
     <div class="marker-rotation-container" style="position: relative; width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; transform: rotate(0deg); transition: transform 0.8s ease-out;">
       ${isAssigned ? `<div style="position: absolute; width: 100%; height: 100%; border: 3px dashed #00BFFF; border-radius: 50%; box-sizing: border-box;"></div>` : ''}
       <img src="${imgSource}" style="width: 100%; height: 100%; object-fit: contain; filter: ${isActive ? 'drop-shadow(0px 4px 6px rgba(0,0,0,0.3))' : 'grayscale(100%) opacity(70%) drop-shadow(0px 4px 6px rgba(0,0,0,0.3))'};" />

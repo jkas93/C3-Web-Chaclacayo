@@ -1,8 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { useAuth } from '../context/AuthContext';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
 import { SERVICIO_CONFIG } from '../types/enums';
 import type { TipoEmergencia } from '../types/enums';
 import { Transition } from '@headlessui/react';
@@ -11,10 +9,11 @@ export const EmergencyAlertOverlay = () => {
   const { rol } = useAuth();
   const { emergencias } = useEmergencias(rol);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(() => new Set());
 
   // Solo emergencias activas y no silenciadas
   const activeEmergencias = emergencias.filter(
-    e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA' && !e.alertaWebSilenciada
+    e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA' && !acknowledgedIds.has(e.id)
   );
   const hasActiveEmergency = activeEmergencias.length > 0;
 
@@ -38,8 +37,10 @@ export const EmergencyAlertOverlay = () => {
   }, [hasActiveEmergency]);
 
   const handleSilenciar = () => {
-    activeEmergencias.forEach(e => {
-      updateDoc(doc(db, 'emergencias', e.id), { alertaWebSilenciada: true });
+    setAcknowledgedIds(previous => {
+      const next = new Set(previous);
+      activeEmergencias.forEach(e => next.add(e.id));
+      return next;
     });
   };
 

@@ -23,6 +23,32 @@
         { "fieldPath": "tipo", "order": "ASCENDING" },
         { "fieldPath": "estado", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "emergencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "prioridad", "order": "ASCENDING" },
+        { "fieldPath": "timestampMs", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "usuarios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "activo", "order": "ASCENDING" },
+        { "fieldPath": "desactivadoEnMs", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "emergencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "horaCierreMs", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

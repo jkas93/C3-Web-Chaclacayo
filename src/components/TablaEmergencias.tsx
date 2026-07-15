@@ -1,67 +1,67 @@
 import { useState, useMemo } from 'react';
+import type { FormEvent } from 'react';
 import { useEmergencias } from '../hooks/useEmergencias';
 import { usePatrulleros } from '../hooks/usePatrulleros';
 import { useAuth } from '../context/AuthContext';
-import { doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebase';
 import { EstadoEmergencia, EstadoPatrullero, SERVICIO_CONFIG } from '../types/enums';
 import type { TipoEmergencia } from '../types/enums';
-import { C3Tabs, C3Listbox, C3Combobox } from './ui';
+import { C3Tabs, C3Listbox, C3Combobox, C3Dialog } from './ui';
 import type { C3TabItem, C3ListboxOption } from './ui';
 
 // M9: Cambiar estado de emergencia
-const cambiarEstado = async (emergenciaId: string, nuevoEstado: string) => {
+const gestionarEmergencia = httpsCallable(functions, 'gestionarEmergencia');
+
+const marcarEnSitio = async (emergenciaId: string) => {
   try {
-    await updateDoc(doc(db, 'emergencias', emergenciaId), { estado: nuevoEstado });
+    await gestionarEmergencia({ emergenciaId, accion: 'MARCAR_EN_SITIO' });
   } catch (err) {
     console.error('Error actualizando estado:', err);
+    alert(err instanceof Error ? err.message : 'No se pudo actualizar la emergencia.');
   }
 };
 
 // Asignación manual de unidad
 const asignarManualmente = async (emergenciaId: string, unidadId: string) => {
   try {
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'emergencias', emergenciaId), {
-      patrullaAsignadaId: unidadId,
-      estado: EstadoEmergencia.DESPACHADA,
-      horaAsignacionMs: Date.now()
-    });
-    batch.update(doc(db, 'patrulleros', unidadId), {
-      estado: EstadoPatrullero.EN_SERVICIO,
-    });
-    await batch.commit();
+    await gestionarEmergencia({ emergenciaId, accion: 'ASIGNAR', unidadId });
   } catch (err) {
     console.error('Error asignando unidad:', err);
+    alert(err instanceof Error ? err.message : 'No se pudo asignar la unidad.');
   }
 };
 
-// P4: Cancelar emergencia y liberar unidad
-const cancelarEmergencia = async (emergenciaId: string, unidadId: string | null) => {
-  try {
-    const esFalsaAlarma = window.confirm("¿Esta emergencia fue una FALSA ALARMA? (Se afectará el score de confiabilidad del vecino)");
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'emergencias', emergenciaId), { 
-      estado: EstadoEmergencia.CANCELADA,
-      esFalsaAlarma: esFalsaAlarma
-    });
-    if (unidadId) {
-      batch.update(doc(db, 'patrulleros', unidadId), { estado: EstadoPatrullero.DISPONIBLE });
-    }
-    await batch.commit();
-  } catch (err) {
-    console.error('Error cancelando emergencia:', err);
-  }
+type OperacionEmergencia = 'RESOLVER' | 'CANCELAR' | 'ESCALAR';
+
+const OPERACION_CONFIG: Record<OperacionEmergencia, { titulo: string; etiqueta: string; ayuda: string }> = {
+  RESOLVER: {
+    titulo: 'Resolver emergencia',
+    etiqueta: 'Resultado de la atención',
+    ayuda: 'Registre el resultado operativo y cualquier observación relevante.',
+  },
+  CANCELAR: {
+    titulo: 'Cancelar emergencia',
+    etiqueta: 'Motivo de cierre o cancelación',
+    ayuda: 'Explique por qué se cancela el caso. Esta acción quedará auditada.',
+  },
+  ESCALAR: {
+    titulo: 'Escalar emergencia',
+    etiqueta: 'Central externa y motivo del escalamiento',
+    ayuda: 'Indique la central contactada, la referencia de coordinación disponible y el motivo.',
+  },
 };
 
 const getEstadoColor = (estado: string) => {
   switch (estado) {
     case 'PENDIENTE':  return '#E02828';
+    case 'PENDIENTE_SIN_UNIDAD': return '#E65100';
     case 'DESPACHADA': return '#F6C23E';
     case 'EN_SITIO':   return '#1E88E5';
     case 'RESUELTA':   return '#43A047';
     case 'COACCION':   return '#8B0000';
     case 'CANCELADA':  return '#757575';
+    case 'ESCALADA':   return '#6A1B9A';
     default:           return '#666';
   }
 };
@@ -84,10 +84,12 @@ const TipoBadge = ({ tipo }: { tipo: string }) => {
 };
 
 // Definición de filtros de estado como tabs
-const FILTROS_KEYS = ['TODAS', 'PENDIENTE', 'COACCION', 'DESPACHADA', 'EN_SITIO', 'RESUELTA', 'CANCELADA'] as const;
+const FILTROS_KEYS = ['TODAS', 'PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'COACCION', 'DESPACHADA', 'EN_SITIO', 'ESCALADA', 'RESUELTA', 'CANCELADA'] as const;
 type FiltroKey = typeof FILTROS_KEYS[number];
 
 const FILTRO_LABELS: Record<FiltroKey, string> = {
+  PENDIENTE_SIN_UNIDAD: 'Sin unidad',
+  ESCALADA: 'Escaladas',
   TODAS:     'Todas',
   PENDIENTE: 'Pendientes',
   COACCION:  'Coacción',
@@ -98,14 +100,18 @@ const FILTRO_LABELS: Record<FiltroKey, string> = {
 };
 
 // Helpers
-const getPrioridadEstado = (estado: string) => {
+const getPrioridadEstado = (estado: string, prioridad?: string, esCoaccion?: boolean) => {
+  if (prioridad === 'P1' || esCoaccion) return 1;
+  if (prioridad === 'P2') return 2;
   switch (estado) {
     case 'COACCION':   return 1;
-    case 'PENDIENTE':  return 2;
-    case 'DESPACHADA': return 3;
-    case 'EN_SITIO':   return 4;
-    case 'RESUELTA':   return 5;
-    case 'CANCELADA':  return 6;
+    case 'PENDIENTE_SIN_UNIDAD': return 2;
+    case 'PENDIENTE':  return 3;
+    case 'ESCALADA':   return 4;
+    case 'DESPACHADA': return 5;
+    case 'EN_SITIO':   return 6;
+    case 'RESUELTA':   return 7;
+    case 'CANCELADA':  return 8;
     default: return 99;
   }
 };
@@ -128,6 +134,55 @@ export const TablaEmergencias = () => {
 
   const [filtroIndex, setFiltroIndex] = useState(0);
   const [searchValue, setSearchValue] = useState('');
+  const [operacion, setOperacion] = useState<{ emergenciaId: string; tipo: OperacionEmergencia } | null>(null);
+  const [motivoOperacion, setMotivoOperacion] = useState('');
+  const [esFalsaAlarma, setEsFalsaAlarma] = useState(false);
+  const [operacionError, setOperacionError] = useState('');
+  const [operacionEnCurso, setOperacionEnCurso] = useState(false);
+
+  const abrirOperacion = (emergenciaId: string, tipo: OperacionEmergencia) => {
+    setOperacion({ emergenciaId, tipo });
+    setMotivoOperacion('');
+    setEsFalsaAlarma(false);
+    setOperacionError('');
+  };
+
+  const cerrarOperacion = () => {
+    if (operacionEnCurso) return;
+    setOperacion(null);
+    setMotivoOperacion('');
+    setEsFalsaAlarma(false);
+    setOperacionError('');
+  };
+
+  const ejecutarOperacion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!operacion) return;
+
+    const motivo = motivoOperacion.trim();
+    if (motivo.length < 5) {
+      setOperacionError('Registre un motivo de al menos 5 caracteres.');
+      return;
+    }
+
+    const accion = operacion.tipo === 'CANCELAR' && esFalsaAlarma
+      ? 'FALSA_ALARMA'
+      : operacion.tipo;
+
+    setOperacionEnCurso(true);
+    setOperacionError('');
+    try {
+      await gestionarEmergencia({ emergenciaId: operacion.emergenciaId, accion, motivo });
+      setOperacion(null);
+      setMotivoOperacion('');
+      setEsFalsaAlarma(false);
+    } catch (err) {
+      console.error('Error gestionando emergencia:', err);
+      setOperacionError(err instanceof Error ? err.message : 'No se pudo completar la operación.');
+    } finally {
+      setOperacionEnCurso(false);
+    }
+  };
 
   const filtroActivo: FiltroKey = FILTROS_KEYS[filtroIndex];
 
@@ -175,8 +230,8 @@ export const TablaEmergencias = () => {
     }
 
     return result.sort((a, b) => {
-      const pA = getPrioridadEstado(a.estado);
-      const pB = getPrioridadEstado(b.estado);
+      const pA = getPrioridadEstado(a.estado, a.prioridad, a.esCoaccion);
+      const pB = getPrioridadEstado(b.estado, b.prioridad, b.esCoaccion);
       if (pA !== pB) return pA - pB;
       return b.timestampMs - a.timestampMs;
     });
@@ -212,10 +267,8 @@ export const TablaEmergencias = () => {
 
   const getNextAction = (estado: string): { label: string; nextEstado: string } | null => {
     switch (estado) {
-      case 'PENDIENTE':  return { label: 'Despachar', nextEstado: EstadoEmergencia.DESPACHADA };
       case 'DESPACHADA': return { label: 'En Sitio',  nextEstado: EstadoEmergencia.EN_SITIO };
       case 'EN_SITIO':   return { label: 'Resolver',  nextEstado: EstadoEmergencia.RESUELTA };
-      case 'COACCION':   return { label: 'Resolver',  nextEstado: EstadoEmergencia.RESUELTA };
       default: return null;
     }
   };
@@ -308,8 +361,8 @@ export const TablaEmergencias = () => {
             return (
               <tr
                 key={e.id}
-                className={`animated-row ${e.estado === EstadoEmergencia.COACCION ? 'row--coaccion' : ''}`}
-                style={{ animationDelay: `${index * 0.03}s` }}
+                className={`animated-row ${(e.estado === EstadoEmergencia.COACCION || e.prioridad === 'P1') ? 'row--coaccion' : ''}`}
+                style={{ animationDelay: `${index * 0.03}s`, outline: e.requiereEscalamiento ? '2px solid #C62828' : undefined }}
               >
                 <td style={{ fontFamily: 'var(--c3-font-mono)', fontSize: '0.75rem', color: '#666' }}>
                   {e.id.substring(0, 8)}...
@@ -317,6 +370,14 @@ export const TablaEmergencias = () => {
 
                 <td>
                   <TipoBadge tipo={e.tipo} />
+                  {e.prioridad && (
+                    <span style={{
+                      display: 'block', fontSize: '0.65rem', marginTop: '4px', fontWeight: 800,
+                      color: e.prioridad === 'P1' ? '#8B0000' : '#E65100'
+                    }}>
+                      {e.prioridad} {e.requiereEscalamiento ? '• ESCALAR AHORA' : ''}
+                    </span>
+                  )}
                   {e.estado === EstadoEmergencia.COACCION && (
                     <span style={{
                       display: 'block', fontSize: '0.65rem',
@@ -345,7 +406,7 @@ export const TablaEmergencias = () => {
 
                 {/* Asignación de unidad → C3Listbox */}
                 <td style={{ fontSize: '0.8rem', color: '#555' }}>
-                  {e.estado === 'PENDIENTE' && !e.patrullaAsignadaId ? (
+                  {['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'COACCION'].includes(e.estado) && !e.patrullaAsignadaId ? (
                     <div style={{ minWidth: '160px' }}>
                       <C3Listbox
                         value=""
@@ -388,7 +449,13 @@ export const TablaEmergencias = () => {
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {nextAction ? (
                       <button
-                        onClick={() => cambiarEstado(e.id, nextAction.nextEstado)}
+                        onClick={() => {
+                          if (nextAction.nextEstado === EstadoEmergencia.EN_SITIO) {
+                            void marcarEnSitio(e.id);
+                          } else {
+                            abrirOperacion(e.id, 'RESOLVER');
+                          }
+                        }}
                         className="btn"
                         style={{
                           padding: '4px 12px',
@@ -406,9 +473,9 @@ export const TablaEmergencias = () => {
                       <span style={{ color: '#9E9E9E', fontSize: '0.9rem' }}>❌</span>
                     ) : null}
 
-                    {(e.estado === 'PENDIENTE' || e.estado === 'DESPACHADA') && (
+                    {['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'COACCION', 'DESPACHADA', 'EN_SITIO', 'ESCALADA'].includes(e.estado) && (
                       <button
-                        onClick={() => cancelarEmergencia(e.id, e.patrullaAsignadaId)}
+                        onClick={() => abrirOperacion(e.id, 'CANCELAR')}
                         style={{
                           padding: '4px 10px', background: '#f5f5f5', color: '#555',
                           border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer',
@@ -416,6 +483,18 @@ export const TablaEmergencias = () => {
                         }}
                       >
                         Cancelar
+                      </button>
+                    )}
+                    {['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'COACCION'].includes(e.estado) && !e.patrullaAsignadaId && (
+                      <button
+                        onClick={() => abrirOperacion(e.id, 'ESCALAR')}
+                        style={{
+                          padding: '4px 10px', background: '#F3E5F5', color: '#6A1B9A',
+                          border: '1px solid #CE93D8', borderRadius: '6px', cursor: 'pointer',
+                          fontSize: '0.7rem', fontWeight: 600
+                        }}
+                      >
+                        Escalar
                       </button>
                     )}
                   </div>
@@ -435,6 +514,72 @@ export const TablaEmergencias = () => {
           )}
         </tbody>
       </table>
+
+      <C3Dialog
+        open={operacion !== null}
+        onClose={cerrarOperacion}
+        title={operacion ? OPERACION_CONFIG[operacion.tipo].titulo : undefined}
+        maxWidth="560px"
+      >
+        {operacion && (
+          <form onSubmit={ejecutarOperacion}>
+            <p id="operacion-emergencia-ayuda" style={{ color: 'var(--c3-text-muted)', marginTop: 0 }}>
+              {OPERACION_CONFIG[operacion.tipo].ayuda}
+            </p>
+
+            {operacionError && (
+              <div
+                role="alert"
+                style={{ background: '#FFEBEE', color: '#C62828', padding: '10px', borderRadius: '6px', marginBottom: '14px' }}
+              >
+                {operacionError}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="operacion-emergencia-motivo">
+                {OPERACION_CONFIG[operacion.tipo].etiqueta}
+              </label>
+              <textarea
+                id="operacion-emergencia-motivo"
+                className="form-input"
+                rows={4}
+                minLength={5}
+                maxLength={500}
+                value={motivoOperacion}
+                onChange={(event) => setMotivoOperacion(event.target.value)}
+                aria-describedby="operacion-emergencia-ayuda"
+                required
+                autoFocus
+                disabled={operacionEnCurso}
+                style={{ resize: 'vertical' }}
+              />
+              <small>{motivoOperacion.trim().length}/500 caracteres</small>
+            </div>
+
+            {operacion.tipo === 'CANCELAR' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={esFalsaAlarma}
+                  onChange={(event) => setEsFalsaAlarma(event.target.checked)}
+                  disabled={operacionEnCurso}
+                />
+                Declarar como falsa alarma
+              </label>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '24px' }}>
+              <button type="button" className="btn btn--ghost" onClick={cerrarOperacion} disabled={operacionEnCurso}>
+                Volver
+              </button>
+              <button type="submit" className="btn btn--primary" disabled={operacionEnCurso || motivoOperacion.trim().length < 5}>
+                {operacionEnCurso ? 'Procesando...' : 'Confirmar operación'}
+              </button>
+            </div>
+          </form>
+        )}
+      </C3Dialog>
     </div>
   );
 };

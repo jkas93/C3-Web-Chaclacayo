@@ -1,12 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useJsApiLoader, GoogleMap } from '@react-google-maps/api';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
-import { usePatrulleros } from '../hooks/usePatrulleros';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebase';
 import { CustomAdvancedMarker } from '../components/CustomAdvancedMarker';
 import { getUnidadIcon } from '../utils/MapMarkerUtils';
-import { EstadoPatrullero, RolOperador } from '../types/enums';
+import { EstadoPatrullero } from '../types/enums';
+import type { TipoServicio } from '../types/enums';
 
 const libraries: ("places" | "marker" | "drawing" | "geometry")[] = ["places", "marker", "drawing", "geometry"];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
@@ -24,10 +24,25 @@ const options: google.maps.MapOptions = {
 
 const CENTER_POSITION = { lat: -11.9765, lng: -76.7725 };
 
+interface UnidadPublica {
+  id: string;
+  tipoServicio: TipoServicio;
+  estado: string;
+  latitud: number;
+  longitud: number;
+  ultimaActualizacion: number;
+}
+
+const obtenerUnidadesPublicas = httpsCallable<
+  { token: string },
+  { unidades: UnidadPublica[]; expiresAtMs: number }
+>(functions, 'obtenerUnidadesPublicas');
+
 export const PublicTrackingPage = () => {
   const { token } = useParams<{ token: string }>();
   const [isValidToken, setIsValidToken] = useState<boolean | null>(null);
   const [loadingToken, setLoadingToken] = useState(true);
+  const [patrulleros, setPatrulleros] = useState<UnidadPublica[]>([]);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
@@ -35,36 +50,35 @@ export const PublicTrackingPage = () => {
     libraries
   });
 
-  const { patrulleros } = usePatrulleros('PUBLIC' as RolOperador);
-
   useEffect(() => {
-    const verifyToken = async () => {
+    let active = true;
+    const cargarUnidades = async () => {
       if (!token) {
         setIsValidToken(false);
         setLoadingToken(false);
         return;
       }
       try {
-        const docRef = doc(db, 'enlaces_publicos', token);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists() && docSnap.data().activo !== false) {
-          setIsValidToken(true);
-        } else {
-          setIsValidToken(false);
-        }
+        const result = await obtenerUnidadesPublicas({ token });
+        if (!active) return;
+        setPatrulleros(result.data.unidades);
+        setIsValidToken(true);
       } catch (error) {
         console.error("Error verificando token:", error);
-        setIsValidToken(false);
+        if (active) setIsValidToken(false);
       } finally {
-        setLoadingToken(false);
+        if (active) setLoadingToken(false);
       }
     };
-    verifyToken();
+    cargarUnidades();
+    const interval = window.setInterval(cargarUnidades, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
   }, [token]);
 
-  const patrullerosFiltrados = useMemo(() =>
-    patrulleros.filter(p => p.latitud != null && p.longitud != null), [patrulleros]);
+  const patrullerosFiltrados = patrulleros.filter(p => Number.isFinite(p.latitud) && Number.isFinite(p.longitud));
 
   if (loadingToken) {
     return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif' }}><h2>Verificando enlace...</h2></div>;
@@ -128,7 +142,7 @@ export const PublicTrackingPage = () => {
           
           return (
             <CustomAdvancedMarker
-              key={p.uid}
+              key={p.id}
               position={{ lat: p.latitud, lng: p.longitud }}
               iconData={iconData}
               zIndex={50}
