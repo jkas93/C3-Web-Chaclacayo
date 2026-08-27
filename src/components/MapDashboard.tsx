@@ -10,10 +10,15 @@ import { EstadoEmergencia, EstadoPatrullero } from '../types/enums';
 import { AlertaCoaccion } from './AlertaCoaccion';
 import type { Emergencia } from '../types/Emergencia';
 import type { Patrullero } from '../types/Patrullero';
+import {
+  Activity, Ambulance, CarFront, CheckCircle2, Clock3, Flame,
+  MapPinned, Navigation, RadioTower, ShieldAlert, ShieldCheck, X
+} from 'lucide-react';
 
 // ── Funciones importadas de Utils ───────────────────────────────────────
 import { getEmergenciaIcon, getUnidadIcon } from '../utils/MapMarkerUtils';
 import { CustomAdvancedMarker } from './CustomAdvancedMarker';
+import { C3MetricCard } from './ui';
 
 const libraries: ("places" | "marker" | "drawing" | "geometry")[] = ["places", "marker", "drawing", "geometry"];
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
@@ -198,6 +203,8 @@ const MapDashboardInner = () => {
     return {
       pendientes: emergencias.filter(e => e.estado === EstadoEmergencia.PENDIENTE || e.estado === EstadoEmergencia.COACCION).length,
       despachadas: emergencias.filter(e => e.estado === EstadoEmergencia.DESPACHADA).length,
+      enSitio: emergencias.filter(e => e.estado === EstadoEmergencia.EN_SITIO).length,
+      sinUnidad: emergencias.filter(e => e.estado === EstadoEmergencia.PENDIENTE_SIN_UNIDAD).length,
       resueltas: resueltas.length,
       total: emergencias.length,
       patrullerosActivos: patrulleros.filter(p => p.estado !== EstadoPatrullero.FUERA_DE_SERVICIO).length,
@@ -285,66 +292,31 @@ const MapDashboardInner = () => {
   if (!isLoaded) return <div>Cargando mapa táctico...</div>;
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* ── Barra de estadísticas ──────────────────────────── */}
-      {/* ── Barra de estadísticas (Dashboard Cards) ──────────────────────────── */}
+    <div className="c3-map-dashboard">
+      {/* ── Resumen operacional ──────────────────────────── */}
       <div
         role="status"
         aria-live="polite"
-        className="mobile-padding-top mobile-carousel"
-        style={{
-          backgroundColor: 'var(--c3-bg)',
-          padding: '16px',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '12px',
-          zIndex: 10,
-          borderBottom: '1px solid var(--c3-border)'
-        }}
+        className="c3-metrics mobile-padding-top"
       >
         {[
-          { label: 'Pendientes', count: stats.pendientes, color: '#E02828', icon: '🔴' },
-          { label: 'Despachadas', count: stats.despachadas, color: '#F6C23E', icon: '🟡' },
-          { label: 'Resueltas', count: stats.resueltas, color: '#43A047', icon: '🟢' },
-          { label: 'Unidades Activas', count: `${stats.patrullerosActivos}/${stats.patrullerosTotal}`, color: '#1E88E5', icon: '🚓' },
-          { label: 'Tiempo Prom.', count: `${stats.avgResponseMin}m`, color: '#8E24AA', icon: '⏱️' }
+          { label: 'Pendientes', count: stats.pendientes, color: 'var(--c3-danger)', icon: <ShieldAlert size={21} /> },
+          { label: 'Sin unidad', count: stats.sinUnidad, color: 'var(--c3-warning)', icon: <RadioTower size={21} /> },
+          { label: 'Despachadas', count: stats.despachadas, color: 'var(--c3-info)', icon: <Navigation size={21} /> },
+          { label: 'En sitio', count: stats.enSitio, color: 'var(--c3-coaction)', icon: <MapPinned size={21} /> },
+          { label: 'Unidades activas', count: `${stats.patrullerosActivos}/${stats.patrullerosTotal}`, color: 'var(--c3-success)', icon: <CarFront size={21} /> }
         ].map(stat => (
-          <div key={stat.label} style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            borderLeft: `4px solid ${stat.color}`
-          }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--c3-text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-              {stat.icon} {stat.label}
-            </span>
-            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--c3-text)' }}>
-              {stat.count}
-            </span>
-          </div>
+          <C3MetricCard key={stat.label} label={stat.label} value={stat.count} icon={stat.icon} color={stat.color} />
         ))}
       </div>
 
       {/* ── Alertas de Geocerca (Fuera de cuadrante) ── */}
       {alertasGeocerca.length > 0 && (
-        <div style={{
-          backgroundColor: '#ff9800',
-          color: 'white',
-          padding: '8px 16px',
-          fontWeight: 'bold',
-          display: 'flex',
-          gap: '12px',
-          alignItems: 'center',
-          overflowX: 'auto',
-          borderBottom: '1px solid #f57c00'
-        }}>
-          <span>⚠️ ALERTAS DE GEOCERCA:</span>
+        <div className="c3-geofence-alert" role="alert">
+          <MapPinned size={18} aria-hidden="true" />
+          <span>Unidades fuera de su cuadrante</span>
           {alertasGeocerca.map(a => (
-            <span key={a.patrullaId} style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>
+            <span key={a.patrullaId} className="c3-geofence-alert__item">
               Unidad {a.nombre} fuera de {a.cuadranteNombre}
             </span>
           ))}
@@ -355,69 +327,56 @@ const MapDashboardInner = () => {
 
       {/* ── Panel de Misión Táctica ──────────────────────── */}
       {selectedEmergencia && (
-        <div style={{
-          padding: '12px 16px',
-          background: 'linear-gradient(135deg, #0B2046 0%, #1a3a6c 100%)',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          borderBottom: '2px solid #00BFFF',
-          flexWrap: 'wrap'
-        }}>
-          <div className="mobile-carousel" style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: '0.7rem', color: '#00BFFF', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
+        <div className="c3-mission-bar">
+          <div className="c3-mission-bar__content">
+            <div className="c3-mission-field">
+              <div className="c3-mission-field__eyebrow">
                 Misión Táctica Activa
               </div>
-              <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+              <div className="c3-mission-field__value">
                 {selectedEmergencia.vecinoNombre || selectedEmergencia.vecinoDni || 'Vecino Desconocido'}
               </div>
             </div>
 
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Estado</div>
-              <div style={{
-                fontWeight: 'bold',
-                color: selectedEmergencia.estado === 'PENDIENTE' ? '#ff4444' :
-                       selectedEmergencia.estado === 'DESPACHADA' ? '#F6C23E' :
-                       selectedEmergencia.estado === 'EN_SITIO' ? '#00BFFF' : '#4CAF50'
-              }}>
+            <div className="c3-mission-field">
+              <span className="c3-mission-field__label">Estado</span>
+              <span className="c3-mission-field__value">
+                <Activity size={15} aria-hidden="true" />
                 {selectedEmergencia.estado}
-              </div>
+              </span>
             </div>
 
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Unidad Asignada</div>
-              <div style={{ fontWeight: 'bold' }}>
+            <div className="c3-mission-field">
+              <span className="c3-mission-field__label">Unidad asignada</span>
+              <span className="c3-mission-field__value">
+                <CarFront size={15} aria-hidden="true" />
                 {activePatrol
-                  ? `${activePatrol.tipoServicio === 'SALUD' ? '🚑' : activePatrol.tipoServicio === 'BOMBEROS' ? '🚒' : '🚔'} ${activePatrol.nombre}`
-                  : '⏳ Sin asignar'}
-              </div>
+                  ? activePatrol.nombre
+                  : 'Sin asignar'}
+              </span>
             </div>
 
             {routeInfo && (
               <>
-                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Distancia</div>
-                  <div style={{ fontWeight: 'bold', color: '#00BFFF' }}>{routeInfo.distance}</div>
+                <div className="c3-mission-field">
+                  <span className="c3-mission-field__label">Distancia</span>
+                  <span className="c3-mission-field__value"><Navigation size={15} />{routeInfo.distance}</span>
                 </div>
-                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#aaa' }}>ETA</div>
-                  <div style={{ fontWeight: 'bold', color: '#4CAF50' }}>{routeInfo.duration}</div>
+                <div className="c3-mission-field">
+                  <span className="c3-mission-field__label">ETA</span>
+                  <span className="c3-mission-field__value"><Clock3 size={15} />{routeInfo.duration}</span>
                 </div>
               </>
             )}
 
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Reportado</div>
-              <div style={{ fontSize: '0.85rem' }}>{elapsedTime}</div>
+            <div className="c3-mission-field">
+              <span className="c3-mission-field__label">Reportado</span>
+              <span className="c3-mission-field__value"><Clock3 size={15} />{elapsedTime}</span>
             </div>
             
             {selectedEmergencia.audioUrl && (
-              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '16px' }}>
-                <div style={{ fontSize: '0.7rem', color: '#aaa', marginBottom: '2px' }}>Evidencia SOS</div>
+              <div className="c3-mission-field">
+                <span className="c3-mission-field__label">Evidencia SOS</span>
                 <audio src={selectedEmergencia.audioUrl} controls style={{ height: '24px', maxWidth: '180px' }} />
               </div>
             )}
@@ -425,27 +384,16 @@ const MapDashboardInner = () => {
 
           <button
             onClick={handleCloseMission}
-            style={{
-              cursor: 'pointer',
-              backgroundColor: 'rgba(224,40,40,0.9)',
-              color: 'white',
-              border: '1px solid rgba(255,255,255,0.2)',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              fontWeight: 'bold',
-              fontSize: '0.8rem',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#ff2222')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(224,40,40,0.9)')}
+            className="c3-mission-close"
+            aria-label="Cerrar panel de misión"
           >
-            ✕ Cerrar Misión
+            <X size={18} aria-hidden="true" /> <span>Cerrar panel</span>
           </button>
         </div>
       )}
 
       {/* ── Mapa Táctico ──────────────────────────────────── */}
-      <div style={{ flex: 1, position: 'relative' }} role="application" aria-label="Mapa táctico de Chaclacayo">
+      <div className="c3-map-canvas" role="application" aria-label="Mapa táctico de Chaclacayo">
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
           options={{...options, draggableCursor: isDrawingMode ? 'crosshair' : ''}}
@@ -542,23 +490,9 @@ const MapDashboardInner = () => {
         {isAdmin && isDrawingMode && draftPolygon.length >= 3 && (
           <button
             onClick={onPolygonComplete}
-            className="desktop-only"
-            style={{
-              position: 'absolute',
-              bottom: '64px',
-              right: '16px',
-              padding: '12px 20px',
-              backgroundColor: '#008CBA',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-              cursor: 'pointer',
-              zIndex: 10
-            }}
+            className="desktop-only c3-map-tool c3-map-tool--secondary"
           >
-            ✓ Guardar Cuadrante
+            <CheckCircle2 size={18} aria-hidden="true" /> Guardar cuadrante
           </button>
         )}
         
@@ -567,47 +501,21 @@ const MapDashboardInner = () => {
             setIsDrawingMode(!isDrawingMode);
             setDraftPolygon([]);
           }}
-          className="desktop-only"
-          style={{
-            position: 'absolute',
-            bottom: '16px',
-            right: '16px',
-            padding: '12px 20px',
-            backgroundColor: isDrawingMode ? '#ff4444' : '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontWeight: 'bold',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-            cursor: 'pointer',
-            zIndex: 10
-          }}
+          className={`desktop-only c3-map-tool c3-map-tool--primary ${isDrawingMode ? 'c3-map-tool--danger' : ''}`}
         >
-          {isDrawingMode ? '✕ Cancelar Dibujo' : '✎ Dibujar Cuadrante'}
+          {isDrawingMode
+            ? <><X size={18} aria-hidden="true" /> Cancelar dibujo</>
+            : <><MapPinned size={18} aria-hidden="true" /> Dibujar cuadrante</>}
         </button>}
 
         {/* ── Lista de emergencias activas (sidebar flotante) ── */}
         {emergenciasFiltradas.filter(e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA').length > 0 && (
-          <div style={{
-            position: 'absolute',
-            bottom: '16px',
-            left: '16px',
-            maxHeight: '240px',
-            width: 'calc(100vw - 32px)',
-            maxWidth: '300px',
-            overflowY: 'auto',
-            backgroundColor: 'rgba(11, 32, 70, 0.92)',
-            borderRadius: '10px',
-            border: '1px solid rgba(0,191,255,0.3)',
-            backdropFilter: 'blur(8px)',
-            padding: '8px',
-            zIndex: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px'
-          }}>
-            <div style={{ color: '#00BFFF', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', padding: '4px 8px' }}>
-              Emergencias Activas
+          <section className="c3-ops-queue" aria-label="Cola operativa de incidentes activos">
+            <div className="c3-ops-queue__header">
+              <h2 className="c3-ops-queue__title"><RadioTower size={18} aria-hidden="true" /> Cola operativa</h2>
+              <span className="c3-nav-count">
+                {emergenciasFiltradas.filter(e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA').length}
+              </span>
             </div>
             {emergenciasFiltradas
               .filter(e => e.estado !== 'RESUELTA' && e.estado !== 'CANCELADA')
@@ -617,48 +525,41 @@ const MapDashboardInner = () => {
                   ? patrullerosFiltrados.find(p => p.uid === e.patrullaAsignadaId) 
                   : null;
                 return (
-                  <div
+                  <button
                     key={e.id}
                     onClick={() => handleSelectEmergencia(e)}
+                    className={`c3-incident-card ${isSelected ? 'c3-incident-card--selected' : ''}`}
                     style={{
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      backgroundColor: isSelected ? 'rgba(0,191,255,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: isSelected ? '1px solid #00BFFF' : '1px solid transparent',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={ev => { if (!isSelected) ev.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
-                    onMouseLeave={ev => { if (!isSelected) ev.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; }}
+                      '--incident-color': e.estado === 'COACCION' ? 'var(--c3-coaction)' :
+                        e.estado === 'PENDIENTE' || e.estado === 'PENDIENTE_SIN_UNIDAD' ? 'var(--c3-warning)' :
+                        e.estado === 'DESPACHADA' ? 'var(--c3-info)' : 'var(--c3-success)'
+                    } as React.CSSProperties}
+                    aria-pressed={isSelected}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'white', fontWeight: 'bold', fontSize: '0.8rem' }}>
-                        {e.tipo === 'BOMBEROS' ? '🔥' : e.tipo === 'SALUD' ? '➕' : '🆘'} {e.vecinoNombre || e.vecinoDni || 'Vecino'}
+                    <div className="c3-incident-card__top">
+                      <span className="c3-incident-card__service">
+                        {e.tipo === 'BOMBEROS'
+                          ? <Flame size={18} color="var(--c3-service-fire)" aria-hidden="true" />
+                          : e.tipo === 'SALUD'
+                            ? <Ambulance size={18} color="var(--c3-service-health)" aria-hidden="true" />
+                            : <ShieldCheck size={18} color="var(--c3-service-police)" aria-hidden="true" />}
+                        {e.tipo}
                       </span>
-                      <span style={{
-                        fontSize: '0.65rem',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        fontWeight: 'bold',
-                        color: 'white',
-                        backgroundColor: e.estado === 'PENDIENTE' ? '#E02828' :
-                                         e.estado === 'DESPACHADA' ? '#F6C23E' :
-                                         e.estado === 'COACCION' ? '#6A0DAD' : '#1E88E5'
-                      }}>
+                      <span className="c3-incident-card__badge">
                         {e.estado}
                       </span>
                     </div>
-                    <div style={{ color: '#aaa', fontSize: '0.7rem', marginTop: '2px' }}>
-                      {assignedPatrol
-                        ? `${(assignedPatrol as Patrullero).tipoServicio === 'SALUD' ? '🚑' : (assignedPatrol as Patrullero).tipoServicio === 'BOMBEROS' ? '🚒' : '🚔'} ${assignedPatrol.nombre}`
-                        : '⏳ Sin unidad'}
-                      {' · '}
-                      {Math.floor((now - e.timestampMs) / 60000)} min
+                    <div className="c3-incident-card__meta">
+                      <span className="c3-incident-card__unit">
+                        {assignedPatrol ? <CarFront size={14} /> : <RadioTower size={14} />}
+                        {assignedPatrol ? (assignedPatrol as Patrullero).nombre : 'Sin unidad'}
+                      </span>
+                      <span>{Math.floor((now - e.timestampMs) / 60000)} min</span>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
-          </div>
+          </section>
         )}
       </div>
     </div>

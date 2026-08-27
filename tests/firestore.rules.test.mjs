@@ -144,9 +144,9 @@ describe('transiciones y mutaciones', () => {
     await assertFails(updateDoc(doc(db, 'emergencias/em-1'), { estado: 'RESUELTA' }));
   });
 
-  it('permite a la unidad asignada confirmar llegada pero no resolver', async () => {
+  it('obliga a la unidad a confirmar llegada mediante backend', async () => {
     const db = testEnv.authenticatedContext('unidad-1').firestore();
-    await assertSucceeds(updateDoc(doc(db, 'emergencias/em-1'), {
+    await assertFails(updateDoc(doc(db, 'emergencias/em-1'), {
       estado: 'EN_SITIO', horaLlegadaMs: 1_700_000_001_000, ultimaActualizacionMs: 1_700_000_001_000,
     }));
     await assertFails(updateDoc(doc(db, 'emergencias/em-1'), { estado: 'RESUELTA' }));

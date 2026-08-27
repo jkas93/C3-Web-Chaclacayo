@@ -4,30 +4,42 @@
 
 /* --- CSS Custom Properties (Design Tokens) --- */
 :root {
-  /* Primary Palette — unified across ecosystem */
-  --c3-primary: #0B2046;
-  --c3-primary-light: #1a3a6a;
-  --c3-primary-hover: #0d2854;
-  --c3-accent: #64B5F6;
+  /* C3 Civic Ops — shared ecosystem palette */
+  --c3-navy-900: #081a35;
+  --c3-navy-800: #0b2046;
+  --c3-navy-700: #173a67;
+  --c3-primary: var(--c3-navy-800);
+  --c3-primary-light: var(--c3-navy-700);
+  --c3-primary-hover: #12315a;
+  --c3-accent: #18c7e8;
+  --c3-accent-soft: #e4f9fd;
 
   /* Status Colors */
-  --c3-danger: #E02828;
-  --c3-danger-dark: #8B0000;
-  --c3-danger-bg: #FFEBEE;
-  --c3-danger-text: #C62828;
-  --c3-warning: #F6C23E;
-  --c3-warning-dark: #F57C00;
-  --c3-success: #43A047;
-  --c3-info: #1E88E5;
+  --c3-danger: #d92d3c;
+  --c3-danger-dark: #a91f2c;
+  --c3-danger-bg: #fff0f1;
+  --c3-danger-text: #b42331;
+  --c3-warning: #e49b24;
+  --c3-warning-dark: #b86f0a;
+  --c3-warning-bg: #fff8e8;
+  --c3-success: #2e8b57;
+  --c3-success-bg: #edf8f1;
+  --c3-info: #1b5daa;
+  --c3-coaction: #7a3db8;
+  --c3-service-police: #1b5daa;
+  --c3-service-health: #0f8b8d;
+  --c3-service-fire: #e56a1c;
 
   /* Neutrals */
-  --c3-bg: #f0f2f5;
+  --c3-bg: #f4f7fa;
   --c3-surface: #ffffff;
-  --c3-border: #e0e0e0;
-  --c3-text: #333333;
-  --c3-text-secondary: #666666;
-  --c3-text-muted: #888888;
-  --c3-text-disabled: #aaaaaa;
+  --c3-surface-subtle: #f8fafc;
+  --c3-border: #dce4ec;
+  --c3-border-strong: #c5d0dc;
+  --c3-text: #152033;
+  --c3-text-secondary: #5d6b7c;
+  --c3-text-muted: #718096;
+  --c3-text-disabled: #9aa7b5;
 
   /* Typography */
   --c3-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -42,19 +54,19 @@
   --c3-space-2xl: 48px;
 
   /* Radii */
-  --c3-radius-sm: 4px;
-  --c3-radius-md: 6px;
-  --c3-radius-lg: 8px;
-  --c3-radius-xl: 12px;
-  --c3-radius-pill: 20px;
+  --c3-radius-sm: 8px;
+  --c3-radius-md: 10px;
+  --c3-radius-lg: 12px;
+  --c3-radius-xl: 16px;
+  --c3-radius-pill: 999px;
 
   /* Shadows */
-  --c3-shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-  --c3-shadow-md: 0 2px 8px rgba(0,0,0,0.1);
-  --c3-shadow-lg: 0 8px 32px rgba(0,0,0,0.15);
+  --c3-shadow-sm: 0 1px 3px rgba(8, 26, 53, 0.08);
+  --c3-shadow-md: 0 8px 24px rgba(8, 26, 53, 0.10);
+  --c3-shadow-lg: 0 18px 48px rgba(8, 26, 53, 0.18);
 
   /* Sidebar */
-  --c3-sidebar-width: 250px;
+  --c3-sidebar-width: 264px;
   --c3-sidebar-collapsed: 64px;
 
   /* Transitions */
@@ -76,6 +88,29 @@ body {
   color: var(--c3-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* --- Focus visible for keyboard accessibility (A6) --- */

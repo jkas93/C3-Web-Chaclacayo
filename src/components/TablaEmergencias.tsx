@@ -7,8 +7,12 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { EstadoEmergencia, EstadoPatrullero, SERVICIO_CONFIG } from '../types/enums';
 import type { TipoEmergencia } from '../types/enums';
-import { C3Tabs, C3Listbox, C3Combobox, C3Dialog } from './ui';
+import { C3Tabs, C3Listbox, C3Combobox, C3Dialog, C3StatusBadge } from './ui';
 import type { C3TabItem, C3ListboxOption } from './ui';
+import {
+  Ambulance, CheckCircle2, CircleSlash2, Flame, Inbox,
+  ShieldAlert, ShieldCheck, Volume2
+} from 'lucide-react';
 
 // M9: Cambiar estado de emergencia
 const gestionarEmergencia = httpsCallable(functions, 'gestionarEmergencia');
@@ -54,31 +58,35 @@ const OPERACION_CONFIG: Record<OperacionEmergencia, { titulo: string; etiqueta: 
 
 const getEstadoColor = (estado: string) => {
   switch (estado) {
-    case 'PENDIENTE':  return '#E02828';
-    case 'PENDIENTE_SIN_UNIDAD': return '#E65100';
-    case 'DESPACHADA': return '#F6C23E';
-    case 'EN_SITIO':   return '#1E88E5';
-    case 'RESUELTA':   return '#43A047';
-    case 'COACCION':   return '#8B0000';
-    case 'CANCELADA':  return '#757575';
-    case 'ESCALADA':   return '#6A1B9A';
-    default:           return '#666';
+    case 'PENDIENTE':  return 'var(--c3-danger)';
+    case 'PENDIENTE_SIN_UNIDAD': return 'var(--c3-warning)';
+    case 'DESPACHADA': return 'var(--c3-info)';
+    case 'EN_SITIO':   return 'var(--c3-coaction)';
+    case 'RESUELTA':   return 'var(--c3-success)';
+    case 'COACCION':   return 'var(--c3-coaction)';
+    case 'CANCELADA':  return 'var(--c3-text-muted)';
+    case 'ESCALADA':   return 'var(--c3-coaction)';
+    default:           return 'var(--c3-text-secondary)';
   }
 };
 
 // Badge de tipo de servicio
 const TipoBadge = ({ tipo }: { tipo: string }) => {
   const cfg = SERVICIO_CONFIG[tipo as TipoEmergencia];
-  if (!cfg) return <span style={{ fontSize: '0.8rem', color: '#666' }}>{tipo}</span>;
+  if (!cfg) return <span className="c3-service-badge">{tipo}</span>;
+  const icon = tipo === 'BOMBEROS'
+    ? <Flame size={15} aria-hidden="true" />
+    : tipo === 'SALUD'
+      ? <Ambulance size={15} aria-hidden="true" />
+      : <ShieldCheck size={15} aria-hidden="true" />;
+  const color = tipo === 'BOMBEROS'
+    ? 'var(--c3-service-fire)'
+    : tipo === 'SALUD'
+      ? 'var(--c3-service-health)'
+      : 'var(--c3-service-police)';
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '3px',
-      background: cfg.bgColor, color: cfg.color,
-      padding: '2px 8px', borderRadius: '10px',
-      fontSize: '0.78rem', fontWeight: 'bold',
-      whiteSpace: 'nowrap',
-    }}>
-      {cfg.emoji} {cfg.label}
+    <span className="c3-service-badge" style={{ '--service-color': color } as React.CSSProperties}>
+      {icon} {cfg.label}
     </span>
   );
 };
@@ -275,7 +283,7 @@ export const TablaEmergencias = () => {
 
   return (
     <div
-      style={{ overflowX: 'auto', padding: '16px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+      className="c3-incidents-table"
       role="region"
       aria-label="Tabla de emergencias"
     >
@@ -288,7 +296,7 @@ export const TablaEmergencias = () => {
       `}</style>
 
       {/* Barra de filtros (C3Tabs) + búsqueda (C3Combobox) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+      <div className="c3-table-toolbar">
 
         {/* Filtros de estado → C3Tabs en filterMode */}
         <C3Tabs
@@ -299,7 +307,7 @@ export const TablaEmergencias = () => {
         />
 
         {/* Búsqueda → C3Combobox */}
-        <div style={{ width: '260px' }}>
+        <div className="c3-table-search">
           <C3Combobox
             value={searchValue}
             onChange={setSearchValue}
@@ -322,7 +330,7 @@ export const TablaEmergencias = () => {
           Registro de emergencias activas y resueltas del distrito de Chaclacayo
         </caption>
         <thead>
-          <tr style={{ background: '#f5f7fa' }}>
+          <tr>
             <th scope="col">ID</th>
             <th scope="col">Servicio</th>
             <th scope="col">Estado</th>
@@ -355,7 +363,6 @@ export const TablaEmergencias = () => {
               value: p.uid,
               label: p.nombre,
               description: '',
-              icon: tipoServicioLabel?.emoji,
             }));
 
             return (
@@ -383,23 +390,13 @@ export const TablaEmergencias = () => {
                       display: 'block', fontSize: '0.65rem',
                       color: '#8B0000', fontWeight: 'bold', marginTop: '4px'
                     }}>
-                      ⚠️ COACCIÓN
+                      <ShieldAlert size={13} aria-hidden="true" /> COACCIÓN
                     </span>
                   )}
                 </td>
 
                 <td>
-                  <span
-                    className="badge"
-                    style={{
-                      background: getEstadoColor(e.estado),
-                      color: 'white', padding: '4px 10px',
-                      borderRadius: '12px', fontSize: '0.7rem',
-                      fontWeight: 'bold', letterSpacing: '0.5px'
-                    }}
-                  >
-                    {e.estado}
-                  </span>
+                  <C3StatusBadge label={e.estado} color={getEstadoColor(e.estado)} />
                 </td>
 
                 <td style={{ fontSize: '0.85rem', fontWeight: 500 }}>{vecinoDisplay}</td>
@@ -438,9 +435,9 @@ export const TablaEmergencias = () => {
                 <td>
                   {e.audioUrl ? (
                     <a href={e.audioUrl} target="_blank" rel="noreferrer"
-                       style={{ color: '#0288D1', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}
-                       aria-label="Escuchar audio">
-                       ▶ Escuchar
+                       className="c3-audio-link"
+                       aria-label="Escuchar audio del incidente">
+                       <Volume2 size={15} aria-hidden="true" /> Escuchar
                     </a>
                   ) : <span aria-label="Sin audio disponible" style={{ color: '#ccc' }}>—</span>}
                 </td>
@@ -468,9 +465,9 @@ export const TablaEmergencias = () => {
                         {nextAction.label}
                       </button>
                     ) : e.estado === 'RESUELTA' ? (
-                      <span style={{ color: '#43A047', fontSize: '0.9rem' }} aria-label="Resuelta">✅</span>
+                      <CheckCircle2 color="var(--c3-success)" size={18} aria-label="Resuelta" />
                     ) : e.estado === 'CANCELADA' ? (
-                      <span style={{ color: '#9E9E9E', fontSize: '0.9rem' }}>❌</span>
+                      <CircleSlash2 color="var(--c3-text-muted)" size={18} aria-label="Cancelada" />
                     ) : null}
 
                     {['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'COACCION', 'DESPACHADA', 'EN_SITIO', 'ESCALADA'].includes(e.estado) && (
@@ -505,7 +502,7 @@ export const TablaEmergencias = () => {
           {emergenciasFiltradas.length === 0 && (
             <tr>
               <td colSpan={9} style={{ padding: '60px', textAlign: 'center', color: '#999' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📭</div>
+                <Inbox size={34} aria-hidden="true" style={{ marginBottom: '8px' }} />
                 {filtroActivo === 'TODAS' && searchValue === ''
                   ? 'Sin emergencias registradas.'
                   : 'No se encontraron emergencias con los filtros actuales.'}

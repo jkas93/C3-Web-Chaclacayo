@@ -44,6 +44,37 @@ describe('Cloud Functions Utilities', () => {
     expect(() => myFunctions.validarNuevaClaveVecino('clave con espacios')).toThrow();
     expect(() => myFunctions.validarNuevaClaveVecino('x'.repeat(129))).toThrow();
   });
+  it('authorizes only the assigned in-service unit to confirm arrival', () => {
+    const emergency = {
+      estado: 'DESPACHADA', tipo: 'POLICIA', patrullaAsignadaId: 'unidad-1',
+    };
+    const unit = { estado: 'EN_SERVICIO', tipoServicio: 'POLICIA' };
+    expect(myFunctions.clasificarConfirmacionLlegada(emergency, 'unidad-1', unit)).toBe('CONFIRMAR');
+    expect(myFunctions.clasificarConfirmacionLlegada(
+      { ...emergency, estado: 'EN_SITIO' }, 'unidad-1', unit,
+    )).toBe('YA_CONFIRMADA');
+    expect(myFunctions.clasificarConfirmacionLlegada(emergency, 'unidad-2', unit)).toBe('UNIDAD_NO_ASIGNADA');
+    expect(myFunctions.clasificarConfirmacionLlegada(
+      emergency, 'unidad-1', { ...unit, tipoServicio: 'SALUD' },
+    )).toBe('SERVICIO_INCOMPATIBLE');
+    expect(myFunctions.clasificarConfirmacionLlegada(
+      emergency, 'unidad-1', { ...unit, estado: 'DISPONIBLE' },
+    )).toBe('UNIDAD_NO_EN_SERVICIO');
+  });
+  it('represents unavailable emergency location without inventing coordinates', () => {
+    expect(myFunctions.normalizarUbicacionEmergencia({
+      ubicacionDisponible: false,
+    })).toEqual({ valida: true, ubicacionDisponible: false });
+    expect(myFunctions.normalizarUbicacionEmergencia({
+      ubicacionDisponible: true, latitud: -11.9765, longitud: -76.7725,
+    })).toEqual({
+      valida: true, ubicacionDisponible: true, latitud: -11.9765, longitud: -76.7725,
+    });
+    expect(myFunctions.normalizarUbicacionEmergencia({
+      ubicacionDisponible: true, latitud: 0, longitud: 0,
+    }).valida).toBe(false);
+    expect(myFunctions.normalizarUbicacionEmergencia({}).valida).toBe(false);
+  });
   it('purges only terminal emergencies closed more than 180 days ago', () => {
     const day = 24 * 60 * 60 * 1000;
     const now = 2_000_000_000_000;

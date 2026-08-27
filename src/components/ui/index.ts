@@ -11,3 +11,5 @@ export type { C3RadioOption } from './C3RadioGroup';
 export { C3Transition } from './C3Transition';
 export { C3Combobox } from './C3Combobox';
 export type { C3ComboboxOption } from './C3Combobox';
+export { C3MetricCard } from './C3MetricCard';
+export { C3StatusBadge } from './C3StatusBadge';

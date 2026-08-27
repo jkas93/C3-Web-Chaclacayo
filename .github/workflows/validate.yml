@@ -1,0 +1,70 @@
+name: Validar Web-C3
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-c3-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint, build, backend y reglas
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_FIREBASE_API_KEY: ci-placeholder
+      VITE_FIREBASE_AUTH_DOMAIN: c3-ci.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: c3-ci
+      VITE_FIREBASE_STORAGE_BUCKET: c3-ci.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: 1:000000000000:web:ci
+      VITE_GOOGLE_MAPS_API_KEY: ci-placeholder
+      VITE_DEV_MODE: "false"
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+
+      - name: Configurar Java 21 para Firebase Emulator Suite
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Instalar dependencias web
+        run: npm ci
+
+      - name: Validar frontend
+        run: |
+          npm run lint
+          npm run build
+          npm audit --omit=dev
+
+      - name: Instalar dependencias de Functions
+        working-directory: functions
+        run: npm ci
+
+      - name: Validar Functions
+        working-directory: functions
+        run: |
+          npm test -- --runInBand
+          npm audit --omit=dev
+
+      - name: Validar reglas Firebase
+        run: npm run test:rules

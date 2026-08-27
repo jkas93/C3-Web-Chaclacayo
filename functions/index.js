@@ -104,6 +104,32 @@ function validarNuevaClaveVecino(clave) {
     }
 }
 
+function clasificarConfirmacionLlegada(emergencia, unidadUid, unidad) {
+    if (!emergencia) return 'EMERGENCIA_INEXISTENTE';
+    if (!unidad) return 'UNIDAD_INEXISTENTE';
+    if (emergencia.patrullaAsignadaId !== unidadUid) return 'UNIDAD_NO_ASIGNADA';
+    if (unidad.tipoServicio !== emergencia.tipo) return 'SERVICIO_INCOMPATIBLE';
+    if (emergencia.estado === 'EN_SITIO') return 'YA_CONFIRMADA';
+    if (emergencia.estado !== 'DESPACHADA') return 'ESTADO_INVALIDO';
+    if (unidad.estado !== 'EN_SERVICIO') return 'UNIDAD_NO_EN_SERVICIO';
+    return 'CONFIRMAR';
+}
+
+function normalizarUbicacionEmergencia(payload = {}) {
+    if (payload.ubicacionDisponible === false) {
+        return { valida: true, ubicacionDisponible: false };
+    }
+
+    const latitud = Number(payload.latitud);
+    const longitud = Number(payload.longitud);
+    const valida = Number.isFinite(latitud) && Number.isFinite(longitud)
+        && latitud >= -90 && latitud <= 90
+        && longitud >= -180 && longitud <= 180
+        && !(latitud === 0 && longitud === 0);
+
+    return { valida, ubicacionDisponible: true, latitud, longitud };
+}
+
 function getPrioridadEmergencia(emergencia, esCoaccion = false) {
     if (emergencia?.prioridad === 'P1' || emergencia?.esCoaccion === true || esCoaccion) return 'P1';
     if (emergencia?.prioridad === 'P3') return 'P3';
@@ -1181,6 +1207,65 @@ exports.gestionarEmergencia = onCall(async (request) => {
     return { success: true, estado: estadoFinal };
 });
 
+exports.confirmarLlegadaUnidad = onCall({ enforceAppCheck: true }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Debe iniciar sesión como unidad.');
+
+    const emergenciaId = String(request.data?.emergenciaId || '').trim();
+    if (!emergenciaId || emergenciaId.length > 160) {
+        throw new HttpsError('invalid-argument', 'Se requiere un identificador de emergencia válido.');
+    }
+
+    const unidadUid = request.auth.uid;
+    const unidadRef = db.collection('patrulleros').doc(unidadUid);
+    const emergenciaRef = db.collection('emergencias').doc(emergenciaId);
+    const auditoriaRef = db.collection('auditoria').doc();
+    let yaConfirmada = false;
+
+    await db.runTransaction(async (transaction) => {
+        const unidadSnap = await transaction.get(unidadRef);
+        const emergenciaSnap = await transaction.get(emergenciaRef);
+        const clasificacion = clasificarConfirmacionLlegada(
+            emergenciaSnap.exists ? emergenciaSnap.data() : null,
+            unidadUid,
+            unidadSnap.exists ? unidadSnap.data() : null
+        );
+
+        if (clasificacion === 'EMERGENCIA_INEXISTENTE') {
+            throw new HttpsError('not-found', 'La emergencia no existe.');
+        }
+        if (clasificacion === 'UNIDAD_INEXISTENTE') {
+            throw new HttpsError('permission-denied', 'La cuenta no corresponde a una unidad.');
+        }
+        if (clasificacion === 'UNIDAD_NO_ASIGNADA' || clasificacion === 'SERVICIO_INCOMPATIBLE') {
+            throw new HttpsError('permission-denied', 'La unidad no está asignada a esta emergencia.');
+        }
+        if (clasificacion === 'ESTADO_INVALIDO' || clasificacion === 'UNIDAD_NO_EN_SERVICIO') {
+            throw new HttpsError('failed-precondition', 'La emergencia o la unidad ya no admite confirmar llegada.');
+        }
+        if (clasificacion === 'YA_CONFIRMADA') {
+            yaConfirmada = true;
+            return;
+        }
+
+        const now = Date.now();
+        transaction.update(emergenciaRef, {
+            estado: 'EN_SITIO',
+            horaLlegadaMs: now,
+            ultimaActualizacionMs: now,
+            gestionadoPor: unidadUid
+        });
+        transaction.set(auditoriaRef, {
+            accion: 'UNIDAD_EN_SITIO',
+            ejecutadoPor: unidadUid,
+            emergenciaId,
+            detalles: 'Estado final: EN_SITIO',
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+    });
+
+    return { success: true, estado: 'EN_SITIO', idempotente: yaConfirmada };
+});
+
 exports.actualizarDisponibilidadUnidad = onCall(async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Debe iniciar sesión como unidad.');
     const unidadRef = db.collection('patrulleros').doc(request.auth.uid);
@@ -1439,8 +1524,7 @@ exports.crearEmergenciaVecino = onCall({ enforceAppCheck: true }, async (request
     const deviceId = String(request.data?.deviceId || '').trim().toLowerCase();
     const tipo = String(request.data?.tipo || '').trim().toUpperCase();
     const estado = String(request.data?.estado || '').trim().toUpperCase();
-    const latitud = Number(request.data?.latitud);
-    const longitud = Number(request.data?.longitud);
+    const ubicacion = normalizarUbicacionEmergencia(request.data);
     const timestampClienteMs = Number(request.data?.timestampMs);
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -1455,9 +1539,7 @@ exports.crearEmergenciaVecino = onCall({ enforceAppCheck: true }, async (request
         || (estado === 'COACCION' && tipo !== 'POLICIA')) {
         throw new HttpsError('invalid-argument', 'El tipo o estado inicial no es válido.');
     }
-    if (!Number.isFinite(latitud) || !Number.isFinite(longitud)
-        || latitud < -90 || latitud > 90 || longitud < -180 || longitud > 180
-        || (latitud === 0 && longitud === 0)) {
+    if (!ubicacion.valida) {
         throw new HttpsError('invalid-argument', 'La ubicación de la emergencia no es válida.');
     }
 
@@ -1495,18 +1577,22 @@ exports.crearEmergenciaVecino = onCall({ enforceAppCheck: true }, async (request
             return;
         }
 
-        transaction.set(emergenciaRef, {
+        const datosEmergencia = {
             id: emergenciaId,
             vecinoId: request.auth.uid,
             vecinoDni: vecinoRef.id,
-            latitud,
-            longitud,
+            ubicacionDisponible: ubicacion.ubicacionDisponible,
             estado,
             tipo,
             timestampMs: Date.now(),
             timestampClienteMs: Number.isFinite(timestampClienteMs) ? timestampClienteMs : null,
             creadoDesdeDispositivoVinculado: true
-        });
+        };
+        if (ubicacion.ubicacionDisponible) {
+            datosEmergencia.latitud = ubicacion.latitud;
+            datosEmergencia.longitud = ubicacion.longitud;
+        }
+        transaction.set(emergenciaRef, datosEmergencia);
     });
 
     return { success: true, id: emergenciaId, idempotente };
@@ -1763,4 +1849,6 @@ if (process.env.NODE_ENV === 'test') {
     exports.clasificarAlertaSla = clasificarAlertaSla;
     exports.esUnidadVisiblePublicamente = esUnidadVisiblePublicamente;
     exports.validarNuevaClaveVecino = validarNuevaClaveVecino;
+    exports.clasificarConfirmacionLlegada = clasificarConfirmacionLlegada;
+    exports.normalizarUbicacionEmergencia = normalizarUbicacionEmergencia;
 }

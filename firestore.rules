@@ -45,22 +45,15 @@ service cloud.firestore {
       // validación se realiza en crearEmergenciaVecino mediante Admin SDK.
       allow create: if false;
 
-      // El vecino solo adjunta evidencia o ubicación. La unidad asignada solo
-      // confirma llegada. Cierre, cancelación, falsa alarma, escalamiento y
-      // asignación pasan por Cloud Functions (Admin SDK).
+      // El vecino solo adjunta evidencia o ubicación. Llegada, cierre,
+      // cancelación, falsa alarma, escalamiento y asignación pasan por Cloud
+      // Functions (Admin SDK) para validar y auditar la transición.
       allow update: if (
           isEmergencyOwner(resource.data)
           && request.resource.data.vecinoId == resource.data.vecinoId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'audioUrl', 'evidenciasAudioUrlsCsv', 'latitudActual',
             'longitudActual', 'ultimaActualizacionMs'
-          ])
-        ) || (
-          isAssignedResponder(resource.data)
-          && resource.data.estado == 'DESPACHADA'
-          && request.resource.data.estado == 'EN_SITIO'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'estado', 'horaLlegadaMs', 'ultimaActualizacionMs'
           ])
         );
 

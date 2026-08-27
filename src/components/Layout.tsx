@@ -56,44 +56,27 @@ const SidebarContent = ({
       {showCloseBtn && onClose && (
         <button
           onClick={onClose}
-          style={{
-            position: 'absolute', top: '16px', right: '16px',
-            background: 'rgba(255,255,255,0.15)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '50%', width: '32px', height: '32px',
-            cursor: 'pointer', color: 'white',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
+          className="c3-sidebar-close"
           aria-label="Cerrar menú"
         >
-          <X size={18} />
+          <X size={20} />
         </button>
       )}
 
       {/* Header */}
-      <div className="app-sidebar__header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <img src="/c3_logo.png" alt="C3 Logo" style={{ width: '32px', height: '32px', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }} />
+      <div className="app-sidebar__header c3-sidebar-brand">
+        <img src="/c3_logo.png" alt="Identidad C3" className="c3-sidebar-brand__logo" />
         <div>
-          <h2 className="app-sidebar__title" style={{ color: '#111827', fontSize: '1.125rem', fontWeight: 600 }}>C3 Chaclacayo</h2>
-          <span className="app-sidebar__subtitle" style={{ color: '#6b7280', fontSize: '0.75rem' }}>Centro de Comando</span>
+          <h2 className="app-sidebar__title">C3 Chaclacayo</h2>
+          <span className="app-sidebar__subtitle">Centro de Comando</span>
         </div>
       </div>
 
       {/* Badge de rol */}
       {rolLabel && (
-        <div style={{ padding: '0 1rem' }}>
-          <div style={{
-            marginTop: '8px',
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: '#f3f4f6',
-            color: '#374151',
-            padding: '4px 12px', borderRadius: '9999px',
-            fontSize: '0.75rem', fontWeight: 500,
-            border: '1px solid #e5e7eb'
-          }}>
-            <Shield size={12} style={{ color: '#6b7280' }} />
-            {rolLabel.label}
-          </div>
+        <div className="c3-role-badge">
+          <Shield size={14} aria-hidden="true" />
+          {rolLabel.label}
         </div>
       )}
 
@@ -109,18 +92,13 @@ const SidebarContent = ({
               className={`app-sidebar__link ${isActive ? 'app-sidebar__link--active' : ''}`}
               aria-current={isActive ? 'page' : undefined}
               onClick={onNavClick}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="c3-nav-label">
                 {item.icon}
                 <span>{item.label}</span>
               </div>
               {item.count != null && item.count > 0 && (
-                <span style={{
-                  background: 'var(--c3-danger)', color: 'white',
-                  padding: '2px 8px', borderRadius: '12px',
-                  fontSize: '0.75rem', fontWeight: 'bold'
-                }}>
+                <span className="c3-nav-count" aria-label={`${item.count} incidentes pendientes`}>
                   {item.count}
                 </span>
               )}
@@ -133,22 +111,14 @@ const SidebarContent = ({
       <div className="app-sidebar__footer">
         <C3Menu
           trigger={
-            <div className="c3-user-menu-trigger" role="button" tabIndex={0} aria-label="Menú de usuario" style={{
-              display: 'flex', alignItems: 'center', gap: '12px', width: '100%',
-              padding: '8px 12px', borderRadius: '6px', cursor: 'pointer',
-              color: '#374151', fontWeight: 500, fontSize: '0.875rem',
-              transition: 'background-color 150ms ease'
-            }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+            <div className="c3-user-menu-trigger" role="button" tabIndex={0} aria-label="Menú de usuario">
+              <div className="c3-user-avatar">
                 <User size={16} />
               </div>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
+              <span className="c3-user-menu-trigger__label">
                 {rolLabel?.label ?? 'Usuario'}
               </span>
-              <ChevronDown size={16} style={{ color: '#9ca3af' }} />
+              <ChevronDown size={16} aria-hidden="true" />
             </div>
           }
           items={userMenuItems}
@@ -200,7 +170,7 @@ export const Layout = () => {
   };
 
   return (
-    <div style={{ backgroundColor: '#f9fafb' }}>
+    <div className="c3-app-shell">
       <EmergencyAlertOverlay />
       <div className="app-layout">
         <a href="#main-content" className="skip-link">
@@ -258,7 +228,7 @@ export const Layout = () => {
         {/* Main Content con transición de página */}
         <main id="main-content" className="app-main" role="main" tabIndex={-1}>
           <C3Transition show key={location.pathname} preset="fadeSlideUp">
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div className="c3-page-stage">
               <AlertasSlaBanner alertas={alertasSla} error={alertasSlaError} />
               <Outlet />
             </div>
