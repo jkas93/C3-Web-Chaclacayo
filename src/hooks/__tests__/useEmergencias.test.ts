@@ -1,25 +1,68 @@
-import { describe, it, expect } from 'vitest';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { renderHook } from '@testing-library/react-hooks';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { renderHook, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { useEmergencias } from '../useEmergencias';
 
-// Mock simple de firebase y del AuthContext para testing
-vi.mock('../../services/firebase', () => ({
-  db: {}
-}));
-vi.mock('firebase/firestore', () => ({
-  collection: vi.fn(),
-  query: vi.fn(),
-  where: vi.fn(),
-  onSnapshot: vi.fn(() => vi.fn())
+const { databaseUnsubscribe, firestoreUnsubscribe } = vi.hoisted(() => ({
+  databaseUnsubscribe: vi.fn(),
+  firestoreUnsubscribe: vi.fn(),
 }));
 
-describe('useEmergencias Hook', () => {
-  it('should return initial state', () => {
-    // Al usar renderHook sin proveer Auth, debería retornar emergencias vacías 
-    // y loading false inicialmente (o el mock default).
-    // Nota: Configurar el wrapper con AuthContext para pruebas completas.
-    expect(true).toBe(true);
+vi.mock('../../services/firebase', () => ({ db: {}, database: {} }));
+
+vi.mock('firebase/firestore', () => ({
+  collection: vi.fn(),
+  limit: vi.fn(),
+  onSnapshot: vi.fn((_query, callback) => {
+    callback({
+      docs: [
+        {
+          id: 'emergencia-e2e',
+          data: () => ({
+            estado: 'DESPACHADA',
+            timestampMs: 1,
+            tipo: 'POLICIA',
+          }),
+        },
+      ],
+    });
+    return firestoreUnsubscribe;
+  }),
+  orderBy: vi.fn(),
+  query: vi.fn(),
+  where: vi.fn(),
+}));
+
+vi.mock('firebase/database', () => ({
+  onValue: vi.fn((_ref, callback) => {
+    callback({
+      val: () => ({
+        'emergencia-e2e': {
+          latitud: -11.9765,
+          longitud: -76.7725,
+        },
+      }),
+    });
+    return databaseUnsubscribe;
+  }),
+  ref: vi.fn(),
+}));
+
+describe('useEmergencias', () => {
+  it('combina el documento operativo con el tracking en tiempo real', async () => {
+    const { result, unmount } = renderHook(() => useEmergencias('ADMIN'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.emergencias).toEqual([
+      expect.objectContaining({
+        estado: 'DESPACHADA',
+        id: 'emergencia-e2e',
+        latitudActual: -11.9765,
+        longitudActual: -76.7725,
+      }),
+    ]);
+
+    unmount();
+    expect(firestoreUnsubscribe).toHaveBeenCalledOnce();
+    expect(databaseUnsubscribe).toHaveBeenCalledOnce();
   });
 });

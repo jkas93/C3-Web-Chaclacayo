@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "node scripts/check-env.mjs && tsc -b && vite build",
     "lint": "eslint .",
+    "test:web": "vitest run --config vitest.config.ts",
     "test:rules": "npm run test:rules:firestore && npm run test:rules:database && npm run test:rules:storage",
     "test:rules:firestore": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.mjs\"",
     "test:rules:database": "firebase emulators:exec --only database \"node --test tests/database.rules.test.mjs\"",
@@ -30,6 +31,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -40,8 +44,10 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "firebase-tools": "^15.23.0",
     "globals": "^17.5.0",
+    "jsdom": "^30.0.1",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.11"
   }
 }
