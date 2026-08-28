@@ -166,6 +166,12 @@ describe('transiciones y mutaciones', () => {
     await assertSucceeds(updateDoc(doc(db, 'usuarios/12345678'), { tokenFCM: 'token-vecino-renovado' }));
   });
 
+  it('obliga a cambiar PIN y clave inicial mediante backend', async () => {
+    const db = testEnv.authenticatedContext('vecino-1').firestore();
+    await assertFails(updateDoc(doc(db, 'usuarios/12345678'), { pinNormal: 'hash-inyectado' }));
+    await assertFails(updateDoc(doc(db, 'usuarios/12345678'), { debeCambiarClave: false }));
+  });
+
   it('impide escrituras operativas directas incluso a ADMIN', async () => {
     const db = testEnv.authenticatedContext('admin-1').firestore();
     await assertFails(updateDoc(doc(db, 'emergencias/em-1'), { estado: 'CANCELADA' }));

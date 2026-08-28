@@ -18,6 +18,12 @@
           ".write": "auth != null && auth.token.role == 'VECINO' && newData.child('vecinoId').val() == auth.uid",
           ".validate": "newData.hasChildren(['latitud', 'longitud', 'vecinoId', 'ultimaActualizacion']) && newData.child('latitud').isNumber() && newData.child('longitud').isNumber() && newData.child('vecinoId').isString() && newData.child('ultimaActualizacion').isNumber()"
         }
+      },
+      "despachos": {
+        "$emergenciaId": {
+          ".read": "auth != null && (data.child('vecinoId').val() == auth.uid || data.child('patrullaId').val() == auth.uid || auth.token.role == 'ADMIN' || auth.token.role == 'POLICIA' || auth.token.role == 'SALUD' || auth.token.role == 'BOMBEROS')",
+          ".write": false
+        }
       }
     }
   }

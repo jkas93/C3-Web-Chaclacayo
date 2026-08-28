@@ -37,6 +37,18 @@ const options: google.maps.MapOptions = {
 const ACTIVE_STATES = ['PENDIENTE', 'PENDIENTE_SIN_UNIDAD', 'DESPACHADA', 'COACCION', 'ESCALADA'] as const;
 const CENTER_POSITION = { lat: -11.9765, lng: -76.7725 };
 
+const metersBetween = (a: google.maps.LatLngLiteral, b: google.maps.LatLngLiteral) => {
+  const earthRadius = 6_371_000;
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const latDelta = toRadians(b.lat - a.lat);
+  const lngDelta = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h = Math.sin(latDelta / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
 interface Cuadrante {
   id: string;
   nombre: string;
@@ -226,13 +238,6 @@ const MapDashboardInner = () => {
           duration: leg.duration?.text || ''
         });
         
-        // Escribir etaMinutos a Firebase para el live tracking
-        if (selectedEmergenciaId && leg.duration?.value) {
-          const etaMin = Math.round(leg.duration.value / 60);
-          const gestionarEmergencia = httpsCallable(functions, 'gestionarEmergencia');
-          gestionarEmergencia({ emergenciaId: selectedEmergenciaId, accion: 'ACTUALIZAR_ETA', etaMinutos: etaMin })
-            .catch(err => console.error("Error actualizando ETA:", err));
-        }
       }
 
       // Ajustar el mapa para mostrar toda la ruta
@@ -243,12 +248,54 @@ const MapDashboardInner = () => {
       console.log('Error fetching directions:', status, response);
       setShouldFetchDirections(false);
     }
-  }, [selectedEmergenciaId]);
+  }, []);
 
   // Patrullero asignado a la emergencia seleccionada
   const activePatrol = selectedEmergencia?.patrullaAsignadaId 
     ? patrullerosFiltrados.find(p => p.uid === selectedEmergencia.patrullaAsignadaId) 
     : null;
+  const lastRouteInputRef = useRef<{
+    origin: google.maps.LatLngLiteral;
+    destination: google.maps.LatLngLiteral;
+    updatedAt: number;
+  } | null>(null);
+
+  // Recalcular cuando la unidad o el destino se desplazan al menos 35 m y,
+  // como respaldo, cada 30 s. El backend sigue siendo la fuente oficial de ETA.
+  useEffect(() => {
+    if (!selectedEmergencia || !activePatrol) {
+      lastRouteInputRef.current = null;
+      return;
+    }
+    const origin = { lat: activePatrol.latitud, lng: activePatrol.longitud };
+    const destination = {
+      lat: selectedEmergencia.latitudActual ?? selectedEmergencia.latitud,
+      lng: selectedEmergencia.longitudActual ?? selectedEmergencia.longitud
+    };
+    const previous = lastRouteInputRef.current;
+    const routeChanged = !previous
+      || metersBetween(previous.origin, origin) >= 35
+      || metersBetween(previous.destination, destination) >= 35
+      || now - previous.updatedAt >= 30_000;
+    if (routeChanged) {
+      lastRouteInputRef.current = { origin, destination, updatedAt: now };
+      setDirectionsResponse(null);
+      setRouteInfo(null);
+      setShouldFetchDirections(true);
+    }
+  }, [
+    selectedEmergencia?.id,
+    selectedEmergencia?.latitud,
+    selectedEmergencia?.longitud,
+    selectedEmergencia?.latitudActual,
+    selectedEmergencia?.longitudActual,
+    activePatrol?.uid,
+    activePatrol?.latitud,
+    activePatrol?.longitud,
+    activePatrol,
+    selectedEmergencia,
+    now
+  ]);
 
   // Handler para seleccionar una emergencia manualmente
   const handleSelectEmergencia = useCallback((e: Emergencia) => {
@@ -256,6 +303,7 @@ const MapDashboardInner = () => {
     setDirectionsResponse(null);
     setRouteInfo(null);
     setShouldFetchDirections(true);
+    lastRouteInputRef.current = null;
 
     // Centrar en la emergencia
     if (mapRef.current) {
@@ -270,6 +318,7 @@ const MapDashboardInner = () => {
     setDirectionsResponse(null);
     setRouteInfo(null);
     setShouldFetchDirections(false);
+    lastRouteInputRef.current = null;
 
     // Volver al centro de Chaclacayo
     if (mapRef.current) {

@@ -20,6 +20,23 @@ describe('Cloud Functions Utilities', () => {
     expect(myFunctions.getLabelServicio('SALUD').emoji).toBe('🚑');
     expect(myFunctions.getLabelServicio('UNKNOWN').emoji).toBe('🚨');
   });
+  it('uses salted PBKDF2 PIN hashes while accepting legacy hashes during migration', () => {
+    const first = myFunctions.hashPin('1234', '77777777');
+    const second = myFunctions.hashPin('1234', '77777777');
+    expect(first).toMatch(/^pbkdf2_sha256\$120000\$/);
+    expect(first).not.toBe(second);
+    expect(myFunctions.verificarPinHash(first, '1234', '77777777')).toBe(true);
+    expect(myFunctions.verificarPinHash(first, '4321', '77777777')).toBe(false);
+    expect(myFunctions.verificarPinHash(
+      'cd1ac2fcb4c1785eae78207bb92155a2abac621564f360add2893c0c91d66d6d',
+      '1234', '77777777',
+    )).toBe(true);
+  });
+  it('calculates monotonic route progress and never exposes 100 before arrival', () => {
+    expect(myFunctions.calcularProgresoRuta(2000, 1500, 0)).toBe(25);
+    expect(myFunctions.calcularProgresoRuta(2000, 1700, 25)).toBe(25);
+    expect(myFunctions.calcularProgresoRuta(2000, 0, 25)).toBe(99);
+  });
   it('prioritizes coercion as P1 and preserves an explicit P3', () => {
     expect(myFunctions.getPrioridadEmergencia({ estado: 'COACCION' }, true)).toBe('P1');
     expect(myFunctions.getPrioridadEmergencia({ esCoaccion: true })).toBe('P1');

@@ -1,6 +1,8 @@
 const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onValueWritten } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 
@@ -24,6 +26,11 @@ const UMBRALES_SLA_MS = Object.freeze({
     ATENCION_PROLONGADA: 120 * 60 * 1000
 });
 const TRACKING_PUBLICO_MAX_AGE_MS = 30 * 60 * 1000;
+const ROUTE_REFRESH_MIN_MS = 30 * 1000;
+const ROUTE_REFRESH_MIN_DISTANCE_M = 35;
+const GOOGLE_MAPS_SERVER_API_KEY = defineSecret('GOOGLE_MAPS_SERVER_API_KEY');
+const ESTADOS_CON_RUTA = ['DESPACHADA', 'COACCION'];
+const PIN_HASH_ITERATIONS = 120000;
 
 // =============================================================================
 // UTILIDADES
@@ -91,8 +98,223 @@ function getLabelServicio(tipo) {
     }
 }
 
-function hashPin(pin, dni) {
+function hashPinLegacy(pin, dni) {
     return crypto.createHash('sha256').update(`${dni}:${pin}`, 'utf8').digest('hex');
+}
+
+function hashPin(pin, dni) {
+    const salt = crypto.randomBytes(16);
+    const digest = crypto.pbkdf2Sync(`${dni}:${pin}`, salt, PIN_HASH_ITERATIONS, 32, 'sha256');
+    return `pbkdf2_sha256$${PIN_HASH_ITERATIONS}$${salt.toString('base64')}$${digest.toString('base64')}`;
+}
+
+function verificarPinHash(storedHash, pin, dni) {
+    const stored = String(storedHash || '');
+    if (/^[a-f0-9]{64}$/i.test(stored)) {
+        const expected = Buffer.from(stored, 'hex');
+        const actual = Buffer.from(hashPinLegacy(pin, dni), 'hex');
+        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+    }
+    const [scheme, iterationsText, saltText, digestText] = stored.split('$');
+    const iterations = Number(iterationsText);
+    if (scheme !== 'pbkdf2_sha256' || !Number.isInteger(iterations)
+        || iterations < 100000 || iterations > 1000000 || !saltText || !digestText) {
+        return false;
+    }
+    try {
+        const salt = Buffer.from(saltText, 'base64');
+        const expected = Buffer.from(digestText, 'base64');
+        const actual = crypto.pbkdf2Sync(`${dni}:${pin}`, salt, iterations, expected.length, 'sha256');
+        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+    } catch (_error) {
+        return false;
+    }
+}
+
+function esCoordenadaValida(latitud, longitud) {
+    return Number.isFinite(latitud) && latitud >= -90 && latitud <= 90
+        && Number.isFinite(longitud) && longitud >= -180 && longitud <= 180
+        && !(latitud === 0 && longitud === 0);
+}
+
+function calcularProgresoRuta(distanciaInicialMetros, distanciaActualMetros, progresoAnterior = 0) {
+    const inicial = Number(distanciaInicialMetros);
+    const actual = Number(distanciaActualMetros);
+    const anterior = Number(progresoAnterior);
+    if (!Number.isFinite(inicial) || inicial <= 0 || !Number.isFinite(actual) || actual < 0) {
+        return Math.max(0, Math.min(99, Number.isFinite(anterior) ? Math.round(anterior) : 0));
+    }
+    const calculado = Math.round((1 - (actual / inicial)) * 100);
+    return Math.max(
+        Number.isFinite(anterior) ? Math.round(anterior) : 0,
+        Math.max(0, Math.min(99, calculado))
+    );
+}
+
+function debeRecalcularRuta(trackingAnterior, origen, destino, nowMs = Date.now(), force = false) {
+    if (force || !trackingAnterior) return true;
+    const ultima = Number(trackingAnterior.ultimaActualizacion || 0);
+    if (!Number.isFinite(ultima) || nowMs - ultima >= ROUTE_REFRESH_MIN_MS) return true;
+    const movimientoUnidad = calculateDistance(
+        Number(trackingAnterior.patrullaLatitud), Number(trackingAnterior.patrullaLongitud),
+        origen.latitud, origen.longitud
+    );
+    const movimientoVecino = calculateDistance(
+        Number(trackingAnterior.destinoLatitud), Number(trackingAnterior.destinoLongitud),
+        destino.latitud, destino.longitud
+    );
+    return movimientoUnidad >= ROUTE_REFRESH_MIN_DISTANCE_M
+        || movimientoVecino >= ROUTE_REFRESH_MIN_DISTANCE_M;
+}
+
+async function solicitarRutaGoogle(origen, destino) {
+    const apiKey = GOOGLE_MAPS_SERVER_API_KEY.value();
+    if (!apiKey) throw new Error('GOOGLE_MAPS_SERVER_API_KEY no configurada');
+
+    const params = new URLSearchParams({
+        origin: `${origen.latitud},${origen.longitud}`,
+        destination: `${destino.latitud},${destino.longitud}`,
+        mode: 'driving',
+        language: 'es',
+        region: 'pe',
+        key: apiKey
+    });
+    const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`, {
+        signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error(`Google Directions HTTP ${response.status}`);
+
+    const body = await response.json();
+    const route = body?.routes?.[0];
+    const leg = route?.legs?.[0];
+    const polyline = route?.overview_polyline?.points;
+    if (body?.status !== 'OK' || !route || !leg || !polyline) {
+        throw new Error(`Google Directions ${body?.status || 'SIN_RUTA'}`);
+    }
+    return {
+        distanciaMetros: Number(leg.distance?.value),
+        duracionSegundos: Number(leg.duration_in_traffic?.value || leg.duration?.value),
+        polyline: String(polyline)
+    };
+}
+
+async function actualizarRutaDespacho(emergenciaId, force = false) {
+    const emergenciaRef = db.collection('emergencias').doc(emergenciaId);
+    const despachoRef = admin.database().ref(`tracking/despachos/${emergenciaId}`);
+    const emergenciaSnap = await emergenciaRef.get();
+    if (!emergenciaSnap.exists) {
+        await despachoRef.remove();
+        return { actualizado: false, motivo: 'EMERGENCIA_INEXISTENTE' };
+    }
+
+    const emergencia = emergenciaSnap.data();
+    const patrullaId = String(emergencia.patrullaAsignadaId || '');
+    if (!patrullaId || ESTADOS_TERMINALES_RETENCION.includes(emergencia.estado)) {
+        await despachoRef.remove();
+        return { actualizado: false, motivo: 'SIN_DESPACHO_ACTIVO' };
+    }
+
+    const [patrullaTrackingSnap, vecinoTrackingSnap, despachoSnap] = await Promise.all([
+        admin.database().ref(`tracking/patrulleros/${patrullaId}`).once('value'),
+        admin.database().ref(`tracking/emergencias/${emergenciaId}`).once('value'),
+        despachoRef.once('value')
+    ]);
+    const patrullaTracking = patrullaTrackingSnap.val() || {};
+    const vecinoTracking = vecinoTrackingSnap.val() || {};
+    const despachoAnterior = despachoSnap.val() || null;
+
+    const origen = {
+        latitud: Number(patrullaTracking.latitud),
+        longitud: Number(patrullaTracking.longitud)
+    };
+    const trackingPerteneceAlVecino = vecinoTracking.vecinoId === emergencia.vecinoId;
+    const destinoTrackingValido = trackingPerteneceAlVecino
+        && esCoordenadaValida(Number(vecinoTracking.latitud), Number(vecinoTracking.longitud));
+    const destino = {
+        latitud: destinoTrackingValido ? Number(vecinoTracking.latitud) : Number(emergencia.latitud),
+        longitud: destinoTrackingValido ? Number(vecinoTracking.longitud) : Number(emergencia.longitud)
+    };
+
+    if (!esCoordenadaValida(origen.latitud, origen.longitud)
+        || !esCoordenadaValida(destino.latitud, destino.longitud)) {
+        return { actualizado: false, motivo: 'COORDENADAS_NO_DISPONIBLES' };
+    }
+
+    const now = Date.now();
+    const enSitio = emergencia.estado === 'EN_SITIO';
+    if (!enSitio && !ESTADOS_CON_RUTA.includes(emergencia.estado)) {
+        return { actualizado: false, motivo: 'ESTADO_SIN_RUTA' };
+    }
+    if (!enSitio && !debeRecalcularRuta(despachoAnterior, origen, destino, now, force)) {
+        return { actualizado: false, motivo: 'THROTTLED' };
+    }
+
+    let ruta = null;
+    let errorRuta = null;
+    if (!enSitio) {
+        try {
+            ruta = await solicitarRutaGoogle(origen, destino);
+        } catch (error) {
+            errorRuta = error?.message || 'RUTA_NO_DISPONIBLE';
+            console.warn(`Ruta ${emergenciaId}: ${errorRuta}`);
+        }
+    }
+
+    const distanciaDirecta = Math.round(calculateDistance(
+        origen.latitud, origen.longitud, destino.latitud, destino.longitud
+    ));
+    const distanciaActual = enSitio ? 0
+        : (Number.isFinite(ruta?.distanciaMetros) ? Math.round(ruta.distanciaMetros) : distanciaDirecta);
+    const mismaUnidad = despachoAnterior?.patrullaId === patrullaId;
+    const distanciaInicialAnterior = mismaUnidad ? Number(despachoAnterior?.distanciaInicialMetros) : NaN;
+    const distanciaInicial = Number.isFinite(distanciaInicialAnterior) && distanciaInicialAnterior > 0
+        ? distanciaInicialAnterior
+        : Math.max(1, distanciaActual);
+    const progresoPct = enSitio ? 100 : calcularProgresoRuta(
+        distanciaInicial, distanciaActual, mismaUnidad ? despachoAnterior?.progresoPct : 0
+    );
+    const duracionSegundos = enSitio ? 0 : (Number.isFinite(ruta?.duracionSegundos)
+        ? Math.max(1, Math.round(ruta.duracionSegundos))
+        : Math.max(60, Math.ceil(distanciaDirecta / 9.72)));
+    const etaMinutos = enSitio ? 0 : Math.max(1, Math.ceil(duracionSegundos / 60));
+    const payload = {
+        emergenciaId,
+        vecinoId: emergencia.vecinoId,
+        patrullaId,
+        estado: emergencia.estado,
+        patrullaLatitud: origen.latitud,
+        patrullaLongitud: origen.longitud,
+        destinoLatitud: destino.latitud,
+        destinoLongitud: destino.longitud,
+        distanciaMetros: distanciaActual,
+        distanciaInicialMetros: distanciaInicial,
+        duracionSegundos,
+        etaMinutos,
+        progresoPct,
+        polyline: ruta?.polyline || '',
+        rutaDisponible: Boolean(ruta?.polyline) || enSitio,
+        estimadoPor: enSitio ? 'LLEGADA_CONFIRMADA' : (ruta ? 'GOOGLE_DIRECTIONS' : 'LINEA_RECTA'),
+        errorRuta: errorRuta || '',
+        calculadoEnMs: now,
+        ubicacionPatrullaEnMs: Number(patrullaTracking.ultimaActualizacion || 0),
+        ubicacionDestinoEnMs: destinoTrackingValido
+            ? Number(vecinoTracking.ultimaActualizacion || 0)
+            : Number(emergencia.timestampMs || 0),
+        ultimaActualizacion: now
+    };
+
+    await despachoRef.transaction((actual) => {
+        if (Number(actual?.calculadoEnMs || 0) > now) return;
+        return payload;
+    });
+    await emergenciaRef.update({
+        etaMinutos,
+        distanciaMetros: distanciaActual,
+        progresoRutaPct: progresoPct,
+        rutaDisponible: payload.rutaDisponible,
+        rutaActualizadaEnMs: now
+    });
+    return { actualizado: true, rutaDisponible: payload.rutaDisponible };
 }
 
 function validarNuevaClaveVecino(clave) {
@@ -592,6 +814,49 @@ exports.procesarCambioEmergencia = onDocumentUpdated('emergencias/{emergenciaId}
     }
 
     return { resultados };
+});
+
+exports.sincronizarRutaDespachoPorUnidad = onValueWritten({
+    ref: 'tracking/patrulleros/{unidadId}',
+    secrets: [GOOGLE_MAPS_SERVER_API_KEY]
+}, async (event) => {
+    if (!event.data.after.exists()) return null;
+    const unidadId = event.params.unidadId;
+    const emergencias = await db.collection('emergencias')
+        .where('patrullaAsignadaId', '==', unidadId)
+        .limit(20)
+        .get();
+    const activas = emergencias.docs.filter((doc) =>
+        [...ESTADOS_CON_RUTA, 'EN_SITIO'].includes(doc.data().estado));
+    return Promise.all(activas.map((doc) => actualizarRutaDespacho(doc.id)));
+});
+
+exports.sincronizarRutaDespachoPorVecino = onValueWritten({
+    ref: 'tracking/emergencias/{emergenciaId}',
+    secrets: [GOOGLE_MAPS_SERVER_API_KEY]
+}, async (event) => {
+    if (!event.data.after.exists()) return null;
+    return actualizarRutaDespacho(event.params.emergenciaId);
+});
+
+exports.sincronizarRutaDespachoPorEmergencia = onDocumentWritten({
+    document: 'emergencias/{emergenciaId}',
+    secrets: [GOOGLE_MAPS_SERVER_API_KEY]
+}, async (event) => {
+    const emergenciaId = event.params.emergenciaId;
+    if (!event.data.after.exists) {
+        await admin.database().ref(`tracking/despachos/${emergenciaId}`).remove();
+        return null;
+    }
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const after = event.data.after.data();
+    const cambioRelevante = !event.data.before.exists
+        || before.estado !== after.estado
+        || before.patrullaAsignadaId !== after.patrullaAsignadaId
+        || before.latitud !== after.latitud
+        || before.longitud !== after.longitud;
+    if (!cambioRelevante) return null;
+    return actualizarRutaDespacho(emergenciaId, true);
 });
 
 // =============================================================================
@@ -1266,7 +1531,7 @@ exports.confirmarLlegadaUnidad = onCall({ enforceAppCheck: true }, async (reques
     return { success: true, estado: 'EN_SITIO', idempotente: yaConfirmada };
 });
 
-exports.actualizarDisponibilidadUnidad = onCall(async (request) => {
+exports.actualizarDisponibilidadUnidad = onCall({ enforceAppCheck: true }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Debe iniciar sesión como unidad.');
     const unidadRef = db.collection('patrulleros').doc(request.auth.uid);
     const unidadSnap = await unidadRef.get();
@@ -1638,6 +1903,44 @@ exports.cambiarClaveInicialVecino = onCall({ enforceAppCheck: true }, async (req
     return { success: true };
 });
 
+exports.cambiarPinVecino = onCall({ enforceAppCheck: true }, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Debe iniciar sesión como vecino.');
+    }
+    const pinActual = String(request.data?.pinActual || '').trim();
+    const pinNuevo = String(request.data?.pinNuevo || '').trim();
+    if (!/^\d{4}$/.test(pinActual) || !/^\d{4}$/.test(pinNuevo)) {
+        throw new HttpsError('invalid-argument', 'Los PIN deben contener exactamente cuatro dígitos.');
+    }
+    if (pinActual === pinNuevo) {
+        throw new HttpsError('invalid-argument', 'El nuevo PIN debe ser diferente del actual.');
+    }
+
+    const vecinoQuery = await db.collection('usuarios')
+        .where('uid', '==', request.auth.uid)
+        .limit(1)
+        .get();
+    if (vecinoQuery.empty || vecinoQuery.docs[0].data().activo === false) {
+        throw new HttpsError('permission-denied', 'La sesión no pertenece a un vecino activo.');
+    }
+    const vecinoDoc = vecinoQuery.docs[0];
+    const vecino = vecinoDoc.data();
+    if (!verificarPinHash(vecino.pinNormal, pinActual, vecinoDoc.id)) {
+        throw new HttpsError('permission-denied', 'El PIN actual es incorrecto.');
+    }
+    if (verificarPinHash(vecino.pinCoaccion, pinNuevo, vecinoDoc.id)) {
+        throw new HttpsError('invalid-argument', 'El PIN normal no puede coincidir con el PIN de coacción.');
+    }
+
+    await vecinoDoc.ref.update({
+        pinNormal: hashPin(pinNuevo, vecinoDoc.id),
+        pinCambiadoEnMs: Date.now(),
+        pinCambiadoPor: request.auth.uid
+    });
+    await registrarAuditoria('PIN_VECINO_CAMBIADO', request.auth.uid, null, `DNI: ${vecinoDoc.id}`);
+    return { success: true };
+});
+
 exports.vigilarSlaOperativo = onSchedule({
     schedule: 'every 1 minutes',
     timeZone: 'America/Lima'
@@ -1726,17 +2029,24 @@ exports.aplicarPoliticaRetencion = onSchedule({
     let emergenciasEliminadas = 0;
     let emergenciasFallidas = 0;
     let trackingEmergenciasEliminados = 0;
+    let trackingDespachosEliminados = 0;
     for (const emergencia of expiradas) {
         try {
             // El documento se conserva si una dependencia falla; la próxima
             // ejecución reintentará la purga y no dejará evidencia huérfana.
             const trackingEmergenciaRef = admin.database().ref(`tracking/emergencias/${emergencia.id}`);
-            const trackingEmergenciaSnap = await trackingEmergenciaRef.once('value');
+            const trackingDespachoRef = admin.database().ref(`tracking/despachos/${emergencia.id}`);
+            const [trackingEmergenciaSnap, trackingDespachoSnap] = await Promise.all([
+                trackingEmergenciaRef.once('value'),
+                trackingDespachoRef.once('value')
+            ]);
             await Promise.all([
                 bucket.deleteFiles({ prefix: `emergencias_audio/${emergencia.id}/` }),
-                trackingEmergenciaRef.remove()
+                trackingEmergenciaRef.remove(),
+                trackingDespachoRef.remove()
             ]);
             if (trackingEmergenciaSnap.exists()) trackingEmergenciasEliminados += 1;
+            if (trackingDespachoSnap.exists()) trackingDespachosEliminados += 1;
             batch.delete(emergencia.ref);
             emergenciasEliminadas += 1;
         } catch (error) {
@@ -1749,7 +2059,7 @@ exports.aplicarPoliticaRetencion = onSchedule({
     const trackingRoot = admin.database().ref('tracking');
     const trackingSnap = await trackingRoot.once('value');
     const updates = {};
-    for (const grupo of ['patrulleros', 'emergencias']) {
+    for (const grupo of ['patrulleros', 'emergencias', 'despachos']) {
         const items = trackingSnap.child(grupo);
         items.forEach((item) => {
             const ultimaActualizacion = Number(item.child('ultimaActualizacion').val() || 0);
@@ -1788,7 +2098,7 @@ exports.aplicarPoliticaRetencion = onSchedule({
 
     await registrarAuditoria('PURGA_RETENCION', 'system', null,
         `Emergencias: ${emergenciasEliminadas} | Emergencias fallidas: ${emergenciasFallidas}`
-        + ` | Tracking: ${Object.keys(updates).length + trackingEmergenciasEliminados}`
+        + ` | Tracking: ${Object.keys(updates).length + trackingEmergenciasEliminados + trackingDespachosEliminados}`
         + ` | Usuarios: ${usuariosEliminados}`
         + ` | Usuarios fallidos: ${usuariosFallidos}`);
 });
@@ -1851,4 +2161,8 @@ if (process.env.NODE_ENV === 'test') {
     exports.validarNuevaClaveVecino = validarNuevaClaveVecino;
     exports.clasificarConfirmacionLlegada = clasificarConfirmacionLlegada;
     exports.normalizarUbicacionEmergencia = normalizarUbicacionEmergencia;
+    exports.hashPin = hashPin;
+    exports.verificarPinHash = verificarPinHash;
+    exports.calcularProgresoRuta = calcularProgresoRuta;
+    exports.debeRecalcularRuta = debeRecalcularRuta;
 }

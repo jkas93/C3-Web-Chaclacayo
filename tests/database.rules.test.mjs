@@ -37,7 +37,35 @@ beforeEach(async () => {
           ultimaActualizacion: 1_700_000_000_000,
         },
       },
+      despachos: {
+        'em-1': {
+          emergenciaId: 'em-1', vecinoId: 'vecino-1', patrullaId: 'unidad-1',
+          estado: 'DESPACHADA', etaMinutos: 4, progresoPct: 25,
+        },
+      },
     });
+  });
+});
+
+describe('seguimiento privado del despacho', () => {
+  it('solo lo leen el vecino propietario, la unidad asignada y la central', async () => {
+    const ownerDb = testEnv.authenticatedContext('vecino-1', { role: 'VECINO' }).database();
+    const otherDb = testEnv.authenticatedContext('vecino-2', { role: 'VECINO' }).database();
+    const unitDb = testEnv.authenticatedContext('unidad-1', { role: 'PATRULLERO' }).database();
+    const otherUnitDb = testEnv.authenticatedContext('unidad-2', { role: 'PATRULLERO' }).database();
+    const operatorDb = testEnv.authenticatedContext('policia-1', { role: 'POLICIA' }).database();
+    await assertSucceeds(get(ref(ownerDb, 'tracking/despachos/em-1')));
+    await assertSucceeds(get(ref(unitDb, 'tracking/despachos/em-1')));
+    await assertSucceeds(get(ref(operatorDb, 'tracking/despachos/em-1')));
+    await assertFails(get(ref(otherDb, 'tracking/despachos/em-1')));
+    await assertFails(get(ref(otherUnitDb, 'tracking/despachos/em-1')));
+  });
+
+  it('ningún cliente puede escribir el despacho calculado por backend', async () => {
+    const ownerDb = testEnv.authenticatedContext('vecino-1', { role: 'VECINO' }).database();
+    const unitDb = testEnv.authenticatedContext('unidad-1', { role: 'PATRULLERO' }).database();
+    await assertFails(set(ref(ownerDb, 'tracking/despachos/em-1/progresoPct'), 100));
+    await assertFails(set(ref(unitDb, 'tracking/despachos/em-1/etaMinutos'), 0));
   });
 });
 
