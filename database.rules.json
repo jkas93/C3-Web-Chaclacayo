@@ -21,7 +21,7 @@
       },
       "despachos": {
         "$emergenciaId": {
-          ".read": "auth != null && (data.child('vecinoId').val() == auth.uid || data.child('patrullaId').val() == auth.uid || auth.token.role == 'ADMIN' || auth.token.role == 'POLICIA' || auth.token.role == 'SALUD' || auth.token.role == 'BOMBEROS')",
+          ".read": "auth != null && (data.child('vecinoId').val() == auth.uid || root.child('tracking/emergencias').child($emergenciaId).child('vecinoId').val() == auth.uid || data.child('patrullaId').val() == auth.uid || auth.token.role == 'ADMIN' || auth.token.role == 'POLICIA' || auth.token.role == 'SALUD' || auth.token.role == 'BOMBEROS')",
           ".write": false
         }
       }

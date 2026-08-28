@@ -67,6 +67,16 @@ describe('seguimiento privado del despacho', () => {
     await assertFails(set(ref(ownerDb, 'tracking/despachos/em-1/progresoPct'), 100));
     await assertFails(set(ref(unitDb, 'tracking/despachos/em-1/etaMinutos'), 0));
   });
+
+  it('el vecino puede suscribirse antes de que backend cree el despacho', async () => {
+    const ownerDb = testEnv.authenticatedContext('vecino-1', { role: 'VECINO' }).database();
+    const otherDb = testEnv.authenticatedContext('vecino-2', { role: 'VECINO' }).database();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await set(ref(context.database(), 'tracking/despachos/em-1'), null);
+    });
+    await assertSucceeds(get(ref(ownerDb, 'tracking/despachos/em-1')));
+    await assertFails(get(ref(otherDb, 'tracking/despachos/em-1')));
+  });
 });
 
 describe('tracking de unidades', () => {
